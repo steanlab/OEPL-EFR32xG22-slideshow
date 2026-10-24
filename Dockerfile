@@ -12,6 +12,7 @@ RUN \
        git-lfs \
        jq \
        yq \
+       libdbus-1-3 \
        libgl1 \
        make \
        openjdk-21-jre-headless \
