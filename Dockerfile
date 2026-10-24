@@ -29,9 +29,9 @@ ENV PATH="$PATH:/opt/commander"
 
 # Install Silicon Labs Configurator (slc)
 RUN \
-    curl -O https://www.silabs.com/documents/login/software/slc_cli_linux.zip \
-    && unzip -d /opt slc_cli_linux.zip \
-    && rm slc_cli_linux.zip
+curl -fL -o slc_cli_linux.zip https://github.com/steanlab/Tag_FW_EFR32xG22/releases/download/commander-v1/slc_cli_linux.zip \
+&& unzip -d /opt slc_cli_linux.zip \
+&& rm slc_cli_linux.zip
 
 ENV PATH="$PATH:/opt/slc_cli"
 
