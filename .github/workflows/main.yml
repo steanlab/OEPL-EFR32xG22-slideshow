@@ -34,7 +34,7 @@ jobs:
             -v "${{ github.workspace }}:/build" \
             -w /build \
             silabs-builder \
-            ./build_all.sh
+            sh -c "slc signature trust --sdk /gecko_sdk/ && ./build_all.sh"
 
       - name: List firmware outputs
         run: |
