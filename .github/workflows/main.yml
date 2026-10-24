@@ -24,6 +24,9 @@ jobs:
             -f Dockerfile \
             .
 
+      - name: Make build script executable
+        run: chmod +x build_all.sh
+
       - name: Build firmware inside container
         run: |
           docker run --rm \
