@@ -43,6 +43,9 @@ RUN \
     && tar -C /opt -xJf arm-gnu-toolchain-${GCC_ARM_VERSION}-x86_64-arm-none-eabi.tar.xz \
     && rm arm-gnu-toolchain-${GCC_ARM_VERSION}-x86_64-arm-none-eabi.tar.xz
 
+# Make ARM GCC tools available at /bin, required by generated makefiles
+RUN for f in $(find /opt/arm-gnu-toolchain-${GCC_ARM_VERSION}-x86_64-arm-none-eabi/bin -type f -name "arm-none-eabi-*"); do ln -sf "$f" "/bin/$(basename "$f")"; done
+
 ENV PATH="$PATH:/opt/arm-gnu-toolchain-${GCC_ARM_VERSION}-x86_64-arm-none-eabi/bin"
 
 ARG GECKO_SDK_VERSION="v4.4.1"
