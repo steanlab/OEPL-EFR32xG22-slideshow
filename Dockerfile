@@ -25,7 +25,7 @@ RUN \
 # Install Simplicity Commander (unfortunately no stable URL available, this
 # is known to be working with Commander_linux_x86_64_1v15p0b1306.tar.bz).
 RUN \
-    curl -O https://www.silabs.com/documents/login/software/SimplicityCommander-Linux.zip \
+    curl -fL -o SimplicityCommander-Linux.zip https://www.silabs.com/documents/public/software/SimplicityCommander-Linux.zip
     && unzip SimplicityCommander-Linux.zip \
     && tar -C /opt -xjf SimplicityCommander-Linux/Commander_linux_x86_64_*.tar.bz \
     && rm -r SimplicityCommander-Linux \
