@@ -31,7 +31,7 @@ jobs:
             -v "${{ github.workspace }}:/build" \
             -v "$HOME/.gitconfig:/home/builder/.gitconfig" \
             silabs-builder \
-            ./build_firmware.sh
+            ./build_all.sh
 
       - name: List firmware outputs
         run: |
