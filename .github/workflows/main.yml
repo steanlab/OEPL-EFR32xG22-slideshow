@@ -30,9 +30,9 @@ jobs:
       - name: Build firmware inside container
         run: |
           docker run --rm \
-            --user builder \
+            --user 0:0 \
             -v "${{ github.workspace }}:/build" \
-            -v "$HOME/.gitconfig:/home/builder/.gitconfig" \
+            -w /build \
             silabs-builder \
             ./build_all.sh
 
