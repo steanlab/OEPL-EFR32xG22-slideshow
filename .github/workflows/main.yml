@@ -1,0 +1,50 @@
+name: Build OEPL Newton Core firmware
+
+on:
+  push:
+    branches:
+      - main
+      - feature/game-of-life
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build Docker builder image
+        run: |
+          docker build \
+            --no-cache \
+            -t silabs-builder \
+            -f Dockerfile \
+            .
+
+      - name: Build firmware inside container
+        run: |
+          docker run --rm \
+            --user builder \
+            -v "${{ github.workspace }}:/build" \
+            -v "$HOME/.gitconfig:/home/builder/.gitconfig" \
+            silabs-builder \
+            ./build_firmware.sh
+
+      - name: List firmware outputs
+        run: |
+          echo "Firmware files found:"
+          find . -type f \( -name "*.s37" -o -name "*.bin" -o -name "*.hex" \) -print
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: newton-core-oepl-firmware
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            **/*.s37
+            **/*.bin
+            **/*.hex
