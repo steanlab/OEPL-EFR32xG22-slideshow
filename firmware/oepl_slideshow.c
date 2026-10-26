@@ -1,24 +1,39 @@
+#include "oepl_slideshow.h"
+#include "oepl_display.h"
+#include "oepl_hw_abstraction.h"
 #include "sl_sleeptimer.h"
-#include "images.h"          // IMG_COUNT, images[][5000]
-#include "oepl_display.h"    // TODO: сверить имена функций
+#include "images.h"
 
-static sl_sleeptimer_timer_handle_t t;
-static uint32_t idx;
+// Для теста поставь 2 минуты: (2UL * 60UL * 1000UL). Для работы: 1 час.
+#define SLIDE_PERIOD_MS (60UL * 60UL * 1000UL)
+
+static sl_sleeptimer_timer_handle_t timer;
 static volatile bool due = true;
+static size_t idx = 0;
 
-static void cb(sl_sleeptimer_timer_handle_t *h, void *d) { due = true; }
-
-void slideshow_init(void) {
-  idx = 0; due = true;
+static void on_timer(sl_sleeptimer_timer_handle_t *h, void *d)
+{
+  (void)h; (void)d;
+  due = true;
 }
 
-bool slideshow_pending(void) { return due; }   // для sleep manager
+void slideshow_init(void)
+{
+  oepl_hw_init();
+  sl_sleeptimer_start_periodic_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
+}
 
-void slideshow_process(void) {
-  if (!due) return;
+bool slideshow_is_event_pending(void)
+{
+  return due;
+}
+
+void slideshow_process(void)
+{
+  if (!due) {
+    return;
+  }
   due = false;
-  // TODO: инициализировать экран, отдать images[idx] драйверу,
-  //       сделать полный refresh, погасить питание экрана
+  oepl_display_slideshow_draw(images[idx]);
   idx = (idx + 1) % IMG_COUNT;
-  sl_sleeptimer_start_timer_ms(&t, 3600UL * 1000UL, cb, NULL, 0, 0);
 }
