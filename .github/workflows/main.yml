@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feature/game-of-life
+      - slideshow
   pull_request:
   workflow_dispatch:
 
