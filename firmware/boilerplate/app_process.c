@@ -34,6 +34,10 @@
 #include "sl_component_catalog.h"
 #include "oepl_app.h"
 
+#ifdef SLIDESHOW
+#include "oepl_slideshow.h"
+#endif
+
 #if defined(SL_CATALOG_KERNEL_PRESENT)
 #include "app_task_init.h"
 #endif
@@ -68,8 +72,11 @@
  *****************************************************************************/
 void app_process_action(void)
 {
-
+#ifdef SLIDESHOW
+  slideshow_process();
+#else
   oepl_app_process();
+#endif
 }
 
 // -----------------------------------------------------------------------------
