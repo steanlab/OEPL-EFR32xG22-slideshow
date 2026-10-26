@@ -356,6 +356,21 @@ void oepl_display_draw(oepl_display_draw_done_cb_t cb)
   }
 }
 
+#ifdef SLIDESHOW
+void oepl_display_slideshow_draw(const uint8_t* bitmap)
+{
+  if (driver == NULL) {
+    return;
+  }
+  size_t w = bitmap[0];
+  size_t h = bitmap[1];
+  C_flushDrawItems();
+  C_addFlashImage((xres - w) / 2, (yres - h) / 2, COLOR_BLACK, ROTATE_0, bitmap);
+  is_drawing = true;
+  driver->draw();
+  is_drawing = false;
+}
+#endif
 // -----------------------------------------------------------------------------
 //                          Static Function Definitions
 // -----------------------------------------------------------------------------
