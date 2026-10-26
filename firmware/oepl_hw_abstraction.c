@@ -7,6 +7,9 @@
 #include "oepl_radio.h"
 #include "oepl_display.h"
 #include "oepl_nfc_driver_common.h"
+#ifdef SLIDESHOW
+#include "oepl_slideshow.h"
+#endif
 
 #include "em_cmu.h"
 #include "em_gpio.h"
@@ -78,7 +81,8 @@ static void* gpio_cb = NULL;
 static bool is_devkit = false;
 
 // Deepsleep entry timer will periodically check if the radio is idle so that
-// we can enter deepsleep.
+// we can enter 
+deepsleep.
 static sl_sleeptimer_timer_handle_t deepsleep_entry_timer_handle;
 static sl_sleeptimer_timer_handle_t nfc_poll_timer_handle;
 
@@ -90,6 +94,11 @@ static sl_sleeptimer_timer_handle_t nfc_poll_timer_handle;
 // (called from the main event loop) whether it is OK to go to sleep.
 bool app_is_ok_to_sleep(void)
 {
+#ifdef SLIDESHOW
+  if(slideshow_is_event_pending()) {
+    return false;
+  }
+#endif
   if(oepl_display_is_drawing()) {
     //DPRINTF("$");
     return true;
@@ -106,6 +115,11 @@ bool app_is_ok_to_sleep(void)
 // process (otherwise it might go back down to sleep immediately).
 sl_power_manager_on_isr_exit_t app_sleep_on_isr_exit(void)
 {
+#ifdef SLIDESHOW
+  if(slideshow_is_event_pending()) {
+    return SL_POWER_MANAGER_WAKEUP;
+  }
+#endif
   // The things we might have been awoken for:
   // - radio event
   // - button press
