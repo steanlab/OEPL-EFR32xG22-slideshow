@@ -81,8 +81,7 @@ static void* gpio_cb = NULL;
 static bool is_devkit = false;
 
 // Deepsleep entry timer will periodically check if the radio is idle so that
-// we can enter 
-deepsleep.
+// we can enter deepsleep.
 static sl_sleeptimer_timer_handle_t deepsleep_entry_timer_handle;
 static sl_sleeptimer_timer_handle_t nfc_poll_timer_handle;
 
