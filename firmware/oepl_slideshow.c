@@ -5,7 +5,7 @@
 #include "images.h"
 
 // Для теста поставь 2 минуты: (2UL * 60UL * 1000UL). Для работы: 1 час.
-#define SLIDE_PERIOD_MS (60UL * 60UL * 1000UL)
+#define SLIDE_PERIOD_MS (2UL * 60UL * 1000UL)
 
 static sl_sleeptimer_timer_handle_t timer;
 static volatile bool due = true;
