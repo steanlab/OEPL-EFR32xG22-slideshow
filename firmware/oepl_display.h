@@ -1,5 +1,4 @@
 #ifndef OEPL_DISPLAY_H
-#ifdef SLIDESHOW
 #define OEPL_DISPLAY_H
 
 // -----------------------------------------------------------------------------
@@ -95,9 +94,5 @@ bool oepl_display_is_drawing(void);
  * The registered callback will be called when the refresh cycle is done.
  *****************************************************************************/
 void oepl_display_draw(oepl_display_draw_done_cb_t cb);
-
-#ifdef SLIDESHOW
-void oepl_display_slideshow_draw(const uint8_t* bitmap);
-#endif
 
 #endif
