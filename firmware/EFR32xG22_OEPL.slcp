@@ -12,6 +12,7 @@ source:
 - {path: boilerplate/app_process.c}
 - {path: common/md5.c}
 - {path: oepl_app.c}
+- {path: oepl_slideshow.c}
 - {path: oepl_display.c}
 - {path: drivers/oepl_display_driver_memlcd.c}
 - {path: drivers/oepl_display_driver_IL91874.c}
@@ -74,6 +75,8 @@ include:
   - {path: oepl_flash_driver.h}
   - {path: oepl_led.h}
   - {path: oepl_nvm.h}
+  - {path: oepl_slideshow.h}
+  - {path: images.h}
   - {path: oepl_radio.h}
   - {path: sl_iostream_eusart_euart_debug_config.h}
 - path: 'drivers'
@@ -260,6 +263,8 @@ define:
     value: "gpioPortB"
   - name: SL_IOSTREAM_EUSART_EUART_DEBUG_RTS_PIN
     value: "8"
+  - name: SLIDESHOW
+    value: "1"
 ui_hints:
   highlight:
   - {path: readme.md, focus: true}
