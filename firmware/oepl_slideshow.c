@@ -4,6 +4,8 @@
 #include "sl_sleeptimer.h"
 #include "images.h"
 
+extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
+
 // Для теста поставь 2 минуты: (2UL * 60UL * 1000UL). Для работы: 1 час.
 #define SLIDE_PERIOD_MS (2UL * 60UL * 1000UL)
 
