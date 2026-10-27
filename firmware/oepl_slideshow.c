@@ -7,7 +7,7 @@
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 
-#define SLIDE_PERIOD_MS  (2UL * 60UL * 1000UL)   // для работы: (60UL * 60UL * 1000UL)
+#define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // для работы: (60UL * 60UL * 1000UL), для проверки : (2UL * 60UL * 1000UL)
 #define TAP_IGNORE_MS    5000UL                  // защита от повторных срабатываний NFC
 
 // Цвета светодиода на этой плате (определено опытом)
