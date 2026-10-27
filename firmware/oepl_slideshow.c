@@ -10,17 +10,81 @@ extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 #define SLIDE_PERIOD_MS  (2UL * 60UL * 1000UL)   // для работы: (60UL * 60UL * 1000UL)
 #define TAP_IGNORE_MS    5000UL                  // защита от повторных срабатываний NFC
 
-// Цвета светодиода (биты: красный 0xE0, зелёный 0x1C, синий 0x03)
-#define LED_GREEN  0x1C   // смена по таймеру
-#define LED_BLUE   0x03   // смена по касанию NFC
+// Цвета светодиода на этой плате (определено опытом)
+#define LED_RED    0x03   // смена по касанию NFC
+#define LED_BLUE   0x1C   // смена по таймеру
+#define LED_GREEN  0xE0   // не проверялся
 
 static sl_sleeptimer_timer_handle_t timer;
 static volatile bool due = true;
 static volatile bool tap = false;
 static volatile bool busy = false;
-static size_t idx = 0;
 static uint32_t last_tap_tick = 0;
 
+// ---------------- Порядок показа: заглавный слайд, затем случайно -----------
+static bool first_slide = true;
+static uint8_t order[IMG_COUNT > 1 ? IMG_COUNT : 1];
+static size_t order_len = 0;
+static size_t order_pos = 0;
+static size_t last_shown = 0;
+static uint32_t rng_state = 0x12345678;
+
+static uint32_t rng_next(void)
+{
+  uint32_t x = rng_state;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  rng_state = x;
+  return x;
+}
+
+static void reshuffle(void)
+{
+  rng_state ^= sl_sleeptimer_get_tick_count() * 2654435761UL;
+  if (rng_state == 0) {
+    rng_state = 0x12345678;
+  }
+
+  // Колода: все слайды, кроме заглавного (индекс 0)
+  order_len = IMG_COUNT - 1;
+  for (size_t i = 0; i < order_len; i++) {
+    order[i] = (uint8_t)(i + 1);
+  }
+  // Перемешивание Фишера–Йетса
+  for (size_t i = order_len - 1; i > 0; i--) {
+    size_t j = rng_next() % (i + 1);
+    uint8_t t = order[i];
+    order[i] = order[j];
+    order[j] = t;
+  }
+  // Не показывать один и тот же слайд два раза подряд на стыке колод
+  if (order_len > 1 && order[0] == last_shown) {
+    uint8_t t = order[0];
+    order[0] = order[order_len - 1];
+    order[order_len - 1] = t;
+  }
+  order_pos = 0;
+}
+
+static size_t next_index(void)
+{
+  if (first_slide) {
+    first_slide = false;
+    last_shown = 0;
+    return 0;                       // заглавный слайд
+  }
+  if (IMG_COUNT <= 1) {
+    return 0;
+  }
+  if (order_pos >= order_len) {
+    reshuffle();
+  }
+  last_shown = order[order_pos++];
+  return last_shown;
+}
+
+// ---------------- Таймер, NFC, светодиод ------------------------------------
 static void on_timer(sl_sleeptimer_timer_handle_t *h, void *d)
 {
   (void)h; (void)d;
@@ -70,12 +134,10 @@ void slideshow_process(void)
   tap = false;
   busy = true;
 
-  blink(by_tap ? LED_BLUE : LED_GREEN);   // моргаем сразу, чтобы был виден отклик
-  oepl_display_slideshow_draw(images[idx]);
-  idx = (idx + 1) % IMG_COUNT;
+  blink(by_tap ? LED_RED : LED_BLUE);
+  oepl_display_slideshow_draw(images[next_index()]);
 
   busy = false;
   tap = false;   // касания во время обновления экрана игнорируем
-  // Следующая автосмена отсчитывается от конца этого обновления
   sl_sleeptimer_restart_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
 }
