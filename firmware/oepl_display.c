@@ -365,7 +365,8 @@ void oepl_display_slideshow_draw(const uint8_t* bitmap)
   size_t w = bitmap[0];
   size_t h = bitmap[1];
   C_flushDrawItems();
-  C_addFlashImage((xres - w) / 2, (yres - h) / 2, COLOR_BLACK, ROTATE_0, bitmap);
+  DPRINTF("slideshow: panel %dx%d, image %dx%d\n", (int)xres, (int)yres, (int)w, (int)h);
+  C_addFlashImage(0, 0, COLOR_BLACK, ROTATE_0, bitmap);
   is_drawing = true;
   driver->draw();
   is_drawing = false;
