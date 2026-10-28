@@ -12,6 +12,12 @@
 
 #include <string.h>
 #include <stdlib.h>
+#ifdef SLIDESHOW
+extern void slideshow_render_line(uint8_t* buf, uint16_t y, int color);
+#define RENDER_LINE slideshow_render_line
+#else
+#define RENDER_LINE C_renderDrawLine
+#endif
 
 // -----------------------------------------------------------------------------
 //                              Configuration values
@@ -112,13 +118,13 @@ static void display_draw(void)
       memset(drawline_y, 0, params->x_res_effective / 8);
 
       if (params->mirrorV) {
-          C_renderDrawLine(drawline_b, params->y_res_effective - curY - 1, COLOR_BLACK);
-          C_renderDrawLine(drawline_r, params->y_res_effective - curY - 1, COLOR_RED);
-          C_renderDrawLine(drawline_y, params->y_res_effective - curY - 1, COLOR_YELLOW);
+          RENDER_LINE(drawline_b, params->y_res_effective - curY - 1, COLOR_BLACK);
+          RENDER_LINE(drawline_r, params->y_res_effective - curY - 1, COLOR_RED);
+          RENDER_LINE(drawline_y, params->y_res_effective - curY - 1, COLOR_YELLOW);
       } else {
-          C_renderDrawLine(drawline_b, curY, COLOR_BLACK);
-          C_renderDrawLine(drawline_r, curY, COLOR_RED);
-          C_renderDrawLine(drawline_y, curY, COLOR_YELLOW);
+          RENDER_LINE(drawline_b, curY, COLOR_BLACK);
+          RENDER_LINE(drawline_r, curY, COLOR_RED);
+          RENDER_LINE(drawline_y, curY, COLOR_YELLOW);
       }
 
       for (uint16_t x = 0; x < params->x_res_effective;) {
