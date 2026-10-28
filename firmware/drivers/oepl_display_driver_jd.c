@@ -5,6 +5,7 @@
 #include "oepl_display_driver_common.h"
 #include "oepl_drawing_capi.h"
 #include "sl_udelay.h"
+#include "sl_sleeptimer.h"
 
 // For debugprint
 #include "oepl_hw_abstraction.h"
@@ -63,6 +64,7 @@ const oepl_display_driver_desc_t oepl_display_driver_jd =
 //                                Static Variables
 // -----------------------------------------------------------------------------
 static oepl_display_parameters_t* params = NULL;
+volatile uint32_t jd_last_refresh_wait_ms = 0;   // диагностика: сколько длилось ожидание обновления
 
 // -----------------------------------------------------------------------------
 //                          Public Function Definitions
@@ -162,16 +164,17 @@ static void display_reset(void)
   oepl_display_driver_wait(20);
   DPRINTF("Activating driver\n");
   oepl_display_driver_common_activate();
+  oepl_display_driver_wait(100);              // новое: дать питанию панели установиться
   DPRINTF("Pulsing reset\n");
   oepl_display_driver_common_pulse_reset(200, 40, 200);
 }
 
 static void display_sleep(void)
 {
-  sl_udelay_wait(500);
+  oepl_display_driver_wait(100);              // было sl_udelay_wait(500)
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_POWER_OFF, {0x00});
-  sl_udelay_wait(500);
-  oepl_display_driver_wait_busy(10000, true);
+  oepl_display_driver_wait(100);              // было sl_udelay_wait(500)
+  oepl_display_driver_wait_busy(2000, true);
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_DEEP_SLEEP, {0xA5});
   oepl_display_driver_wait(100);
 
@@ -190,15 +193,18 @@ static void display_refresh_and_wait(void)
     oepl_display_driver_wait(10);
     DPRINTF("Turn on EPD power rails\n");
     EMIT_INSTRUCTION_STATIC_DATA(0x04, {0x00});
-    sl_udelay_wait(500);
-    oepl_display_driver_wait_busy(10000, true);
+    oepl_display_driver_wait(100);            // было sl_udelay_wait(500)
+    oepl_display_driver_wait_busy(1000, true);
     oepl_display_driver_wait(10);
   }
 
   DPRINTF("Sending refresh\n");
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_DISPLAY_REFRESH, {0x00});
-  sl_udelay_wait(2000);
-  oepl_display_driver_wait_busy(120000, true);
+  oepl_display_driver_wait(300);              // было sl_udelay_wait(2000)
+
+  uint32_t t0 = sl_sleeptimer_get_tick_count();
+  oepl_display_driver_wait_busy(50000, true);
+  jd_last_refresh_wait_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count() - t0);
 }
 
 static void display_reinit(void)
