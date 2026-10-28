@@ -20,6 +20,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      
+      - name: Prepare images
+        run: |
+          shopt -s nullglob
+          rm -rf work_images && mkdir work_images
+          zips=(slideshow_src/*.zip)
+          if [ ${#zips[@]} -gt 1 ]; then
+            echo "ERROR: slideshow_src must contain exactly one zip, found ${#zips[@]}:"
+            printf '  %s\n' "${zips[@]}"
+            exit 1
+          elif [ ${#zips[@]} -eq 1 ]; then
+            echo "Using archive: ${zips[0]}"
+            unzip -q -o -j "${zips[0]}" -x '__MACOSX/*' -d work_images
+          else
+            echo "No zip found, trying loose images from slideshow_src"
+            cp -f slideshow_src/* work_images/ 2>/dev/null || true
+          fi
+          ls -1 work_images
 
       - name: Generate slideshow images
         run: |
