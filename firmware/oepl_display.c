@@ -357,38 +357,20 @@ void oepl_display_draw(oepl_display_draw_done_cb_t cb)
 }
 
 #ifdef SLIDESHOW
-volatile uint8_t slideshow_draw_attempts = 0;   // диагностика: 0 = пропущено, 1 = с 1-й попытки, 2-3 = повторы
+static const uint8_t* slideshow_bmp = NULL;
 
-// Есть ли в исходном битмапе хоть один чёрный пиксель
-static bool bitmap_has_black(const uint8_t* bmp)
+// Заменяет движок рисования: строка берётся прямо из битмапа
+void slideshow_render_line(uint8_t* buf, uint16_t y, int color)
 {
-  size_t n = (((size_t)bmp[0] + 7) / 8) * bmp[1];
-  for (size_t i = 0; i < n; i++) {
-    if (bmp[2 + i]) {
-      return true;
-    }
+  if (slideshow_bmp == NULL || color != COLOR_BLACK) {
+    return;                      // красный и жёлтый слои остаются пустыми
   }
-  return false;
-}
-
-// Есть ли чёрные пиксели в очереди рисования (то, что реально уйдёт на панель)
-static bool queue_has_black(void)
-{
-  uint8_t line[40];
-  size_t bytes = (xres + 7) / 8;
-  if (bytes > sizeof(line)) {
-    bytes = sizeof(line);
+  size_t h = slideshow_bmp[1];
+  if (y >= h) {
+    return;
   }
-  for (size_t y = 0; y < yres; y += 5) {
-    memset(line, 0, sizeof(line));
-    C_renderDrawLine(line, y, COLOR_BLACK);
-    for (size_t i = 0; i < bytes; i++) {
-      if (line[i]) {
-        return true;
-      }
-    }
-  }
-  return false;
+  size_t row_bytes = ((size_t)slideshow_bmp[0] + 7) / 8;
+  memcpy(buf, &slideshow_bmp[2 + (size_t)y * row_bytes], row_bytes);
 }
 
 void oepl_display_slideshow_draw(const uint8_t* bitmap)
@@ -396,21 +378,10 @@ void oepl_display_slideshow_draw(const uint8_t* bitmap)
   if (driver == NULL) {
     return;
   }
-  bool expect_black = bitmap_has_black(bitmap);
-  slideshow_draw_attempts = 0;
-
-  for (int attempt = 1; attempt <= 3; attempt++) {
-    C_flushDrawItems();
-    C_addFlashImage(0, 0, COLOR_BLACK, ROTATE_0, bitmap);
-    if (!expect_black || queue_has_black()) {
-      slideshow_draw_attempts = attempt;
-      is_drawing = true;
-      driver->draw();
-      is_drawing = false;
-      return;
-    }
-  }
-  // Картинка так и не попала в очередь: экран не трогаем, остаётся прежняя картинка
+  slideshow_bmp = bitmap;
+  is_drawing = true;
+  driver->draw();
+  is_drawing = false;
 }
 #endif
 // -----------------------------------------------------------------------------
