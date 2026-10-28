@@ -7,20 +7,24 @@
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 
-#define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // для работы: (60UL * 60UL * 1000UL), для проверки : (2UL * 60UL * 1000UL)
-#define TAP_IGNORE_MS    5000UL                  // защита от повторных срабатываний NFC
-#define TITLE_HOLD_MS    (30UL * 1000UL)         // сколько висит заглавный слайд
+#define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // период смены (для тестов можно меньше)
+#define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
+#define TAP_IGNORE_MS    5000UL                   // защита от повторных срабатываний NFC
+#define MIN_GAP_MS       (180UL * 1000UL)         // мин. пауза между обновлениями при касании
 
-// Цвета светодиода на этой плате (определено опытом)
+// Цвета светодиода на этой плате
 #define LED_RED    0x03   // смена по касанию NFC
 #define LED_BLUE   0x1C   // смена по таймеру
-#define LED_GREEN  0xE0   // не проверялся
+#define LED_GREEN  0xE0   // касание слишком рано, обновления не будет (не проверялся)
 
 static sl_sleeptimer_timer_handle_t timer;
 static volatile bool due = true;
 static volatile bool tap = false;
+static volatile bool rejected = false;
 static volatile bool busy = false;
 static uint32_t last_tap_tick = 0;
+static uint32_t last_draw_end_tick = 0;
+static bool have_drawn = false;
 
 // ---------------- Порядок показа: заглавный слайд, затем случайно -----------
 static bool first_slide = true;
@@ -103,6 +107,10 @@ static void on_gpio(oepl_hw_gpio_channel_t ch, oepl_hw_gpio_event_t ev)
     return;
   }
   last_tap_tick = now;
+  if (have_drawn && sl_sleeptimer_tick_to_ms(now - last_draw_end_tick) < MIN_GAP_MS) {
+    rejected = true;                // слишком рано после прошлого обновления
+    return;
+  }
   tap = true;
 }
 
@@ -122,11 +130,15 @@ void slideshow_init(void)
 
 bool slideshow_is_event_pending(void)
 {
-  return due || tap;
+  return due || tap || rejected;
 }
 
 void slideshow_process(void)
 {
+  if (rejected) {
+    rejected = false;
+    blink(LED_GREEN);
+  }
   if (!due && !tap) {
     return;
   }
@@ -139,11 +151,13 @@ void slideshow_process(void)
   blink(by_tap ? LED_RED : LED_BLUE);
   oepl_display_slideshow_draw(images[shown]);
 
+  last_draw_end_tick = sl_sleeptimer_get_tick_count();
+  have_drawn = true;
   busy = false;
-  tap = false;   // касания во время обновления экрана игнорируем
+  tap = false;        // касания во время обновления экрана игнорируем
+  rejected = false;
 
-  // Заглавный слайд (индекс 0) держим короткое время, остальные по обычному периоду.
-  // Если картинка всего одна, заглавного режима нет.
+  // Заглавный слайд держим недолго, остальные по обычному периоду
   uint32_t wait_ms = (shown == 0 && IMG_COUNT > 1) ? TITLE_HOLD_MS : SLIDE_PERIOD_MS;
   sl_sleeptimer_restart_timer_ms(&timer, wait_ms, on_timer, NULL, 0, 0);
 }
