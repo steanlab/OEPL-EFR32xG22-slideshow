@@ -198,7 +198,7 @@ static void display_refresh_and_wait(void)
   DPRINTF("Sending refresh\n");
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_DISPLAY_REFRESH, {0x00});
   sl_udelay_wait(2000);
-  oepl_display_driver_wait_busy(50000, true);
+  oepl_display_driver_wait_busy(120000, true);
 }
 
 static void display_reinit(void)
