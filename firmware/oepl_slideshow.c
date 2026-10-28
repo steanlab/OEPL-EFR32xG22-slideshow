@@ -6,17 +6,18 @@
 #include "images.h"
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
-extern volatile uint32_t jd_last_refresh_wait_ms;
+extern volatile uint8_t slideshow_draw_attempts;
 
-#define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // период смены (для тестов можно меньше)
+#define SLIDE_PERIOD_MS  (60UL * 60UL * 1000UL)   // период смены
 #define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
 #define TAP_IGNORE_MS    5000UL                   // защита от повторных срабатываний NFC
-#define MIN_GAP_MS       0UL                   // мин. пауза между обновлениями при касании #define MIN_GAP_MS       0UL
+#define MIN_GAP_MS       0UL                      // 0 = без ограничения между касаниями
+#define DEBUG_SEQUENTIAL 1                        // ВРЕМЕННО: 1 = по порядку, пауза 5 с; 0 = обычный режим
 
 // Цвета светодиода на этой плате
 #define LED_RED    0x03   // смена по касанию NFC
 #define LED_BLUE   0x1C   // смена по таймеру
-#define LED_GREEN  0xE0   // касание слишком рано, обновления не будет (не проверялся)
+#define LED_GREEN  0xE0   // касание слишком рано (при MIN_GAP_MS > 0)
 
 static sl_sleeptimer_timer_handle_t timer;
 static volatile bool due = true;
@@ -51,20 +52,16 @@ static void reshuffle(void)
   if (rng_state == 0) {
     rng_state = 0x12345678;
   }
-
-  // Колода: все слайды, кроме заглавного (индекс 0)
   order_len = IMG_COUNT - 1;
   for (size_t i = 0; i < order_len; i++) {
     order[i] = (uint8_t)(i + 1);
   }
-  // Перемешивание Фишера–Йетса
   for (size_t i = order_len - 1; i > 0; i--) {
     size_t j = rng_next() % (i + 1);
     uint8_t t = order[i];
     order[i] = order[j];
     order[j] = t;
   }
-  // Не показывать один и тот же слайд два раза подряд на стыке колод
   if (order_len > 1 && order[0] == last_shown) {
     uint8_t t = order[0];
     order[0] = order[order_len - 1];
@@ -75,6 +72,12 @@ static void reshuffle(void)
 
 static size_t next_index(void)
 {
+#if DEBUG_SEQUENTIAL
+  static size_t seq = 0;
+  size_t i = seq;
+  seq = (seq + 1) % IMG_COUNT;
+  return i;                         // 0, 1, 2, ... по алфавиту, потом снова 0
+#else
   if (first_slide) {
     first_slide = false;
     last_shown = 0;
@@ -88,6 +91,7 @@ static size_t next_index(void)
   }
   last_shown = order[order_pos++];
   return last_shown;
+#endif
 }
 
 // ---------------- Таймер, NFC, светодиод ------------------------------------
@@ -109,7 +113,7 @@ static void on_gpio(oepl_hw_gpio_channel_t ch, oepl_hw_gpio_event_t ev)
   }
   last_tap_tick = now;
   if (have_drawn && sl_sleeptimer_tick_to_ms(now - last_draw_end_tick) < MIN_GAP_MS) {
-    rejected = true;                // слишком рано после прошлого обновления
+    rejected = true;
     return;
   }
   tap = true;
@@ -151,9 +155,13 @@ void slideshow_process(void)
   size_t shown = next_index();
   blink(by_tap ? LED_RED : LED_BLUE);
   oepl_display_slideshow_draw(images[shown]);
-  if (jd_last_refresh_wait_ms < 10000UL) {   // ВРЕМЕННО: ожидание обновления слишком короткое
-    for (int n = 0; n < 3; n++) {
-      blink(LED_GREEN);
+
+  // ВРЕМЕННО, диагностика очереди рисования (после обновления экрана):
+  // 2-3 красные вспышки = очередь была пустой, повтор помог; 5 = не удалось
+  if (slideshow_draw_attempts != 1) {
+    int flashes = (slideshow_draw_attempts == 0) ? 5 : slideshow_draw_attempts;
+    for (int n = 0; n < flashes; n++) {
+      blink(LED_RED);
       sl_udelay_wait(250000);
     }
   }
@@ -161,10 +169,12 @@ void slideshow_process(void)
   last_draw_end_tick = sl_sleeptimer_get_tick_count();
   have_drawn = true;
   busy = false;
-  tap = false;        // касания во время обновления экрана игнорируем
+  tap = false;
   rejected = false;
 
-  // Заглавный слайд держим недолго, остальные по обычному периоду
   uint32_t wait_ms = (shown == 0 && IMG_COUNT > 1) ? TITLE_HOLD_MS : SLIDE_PERIOD_MS;
+#if DEBUG_SEQUENTIAL
+  wait_ms = 5UL * 1000UL;           // следующая смена через 5 с после обновления
+#endif
   sl_sleeptimer_restart_timer_ms(&timer, wait_ms, on_timer, NULL, 0, 0);
 }
