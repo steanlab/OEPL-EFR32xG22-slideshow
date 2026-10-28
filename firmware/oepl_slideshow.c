@@ -6,7 +6,6 @@
 #include "images.h"
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
-extern volatile uint8_t slideshow_draw_attempts;
 
 #define SLIDE_PERIOD_MS  (60UL * 60UL * 1000UL)   // период смены
 #define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
@@ -155,16 +154,6 @@ void slideshow_process(void)
   size_t shown = next_index();
   blink(by_tap ? LED_RED : LED_BLUE);
   oepl_display_slideshow_draw(images[shown]);
-
-  // ВРЕМЕННО, диагностика очереди рисования (после обновления экрана):
-  // 2-3 красные вспышки = очередь была пустой, повтор помог; 5 = не удалось
-  if (slideshow_draw_attempts != 1) {
-    int flashes = (slideshow_draw_attempts == 0) ? 5 : slideshow_draw_attempts;
-    for (int n = 0; n < flashes; n++) {
-      blink(LED_RED);
-      sl_udelay_wait(250000);
-    }
-  }
 
   last_draw_end_tick = sl_sleeptimer_get_tick_count();
   have_drawn = true;
