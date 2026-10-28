@@ -10,7 +10,7 @@ extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 #define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // период смены (для тестов можно меньше)
 #define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
 #define TAP_IGNORE_MS    5000UL                   // защита от повторных срабатываний NFC
-#define MIN_GAP_MS       (180UL * 1000UL)         // мин. пауза между обновлениями при касании
+#define MIN_GAP_MS       0UL                   // мин. пауза между обновлениями при касании #define MIN_GAP_MS       0UL
 
 // Цвета светодиода на этой плате
 #define LED_RED    0x03   // смена по касанию NFC
@@ -149,7 +149,15 @@ void slideshow_process(void)
 
   size_t shown = next_index();
   blink(by_tap ? LED_RED : LED_BLUE);
+    uint32_t t0 = sl_sleeptimer_get_tick_count();
   oepl_display_slideshow_draw(images[shown]);
+  uint32_t dur_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count() - t0);
+  if (dur_ms < 10000UL) {          // ВРЕМЕННО: обновление быстрее 10 с = подозрительно
+    for (int n = 0; n < 3; n++) {
+      blink(LED_GREEN);            // 0xE0, вероятно, зелёный
+      sl_udelay_wait(250000);
+    }
+  }
 
   last_draw_end_tick = sl_sleeptimer_get_tick_count();
   have_drawn = true;
