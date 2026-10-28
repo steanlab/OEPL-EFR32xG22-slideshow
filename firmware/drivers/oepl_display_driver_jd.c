@@ -171,7 +171,7 @@ static void display_sleep(void)
   sl_udelay_wait(500);
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_POWER_OFF, {0x00});
   sl_udelay_wait(500);
-  oepl_display_driver_wait_busy(2000, true);
+  oepl_display_driver_wait_busy(10000, true);
   EMIT_INSTRUCTION_STATIC_DATA(EPD_CMD_DEEP_SLEEP, {0xA5});
   oepl_display_driver_wait(100);
 
@@ -191,7 +191,7 @@ static void display_refresh_and_wait(void)
     DPRINTF("Turn on EPD power rails\n");
     EMIT_INSTRUCTION_STATIC_DATA(0x04, {0x00});
     sl_udelay_wait(500);
-    oepl_display_driver_wait_busy(1000, true);
+    oepl_display_driver_wait_busy(10000, true);
     oepl_display_driver_wait(10);
   }
 
