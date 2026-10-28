@@ -6,6 +6,7 @@
 #include "images.h"
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
+extern volatile uint32_t jd_last_refresh_wait_ms;
 
 #define SLIDE_PERIOD_MS  (120UL * 60UL * 1000UL)   // период смены (для тестов можно меньше)
 #define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
@@ -149,12 +150,10 @@ void slideshow_process(void)
 
   size_t shown = next_index();
   blink(by_tap ? LED_RED : LED_BLUE);
-    uint32_t t0 = sl_sleeptimer_get_tick_count();
   oepl_display_slideshow_draw(images[shown]);
-  uint32_t dur_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count() - t0);
-  if (dur_ms < 10000UL) {          // ВРЕМЕННО: обновление быстрее 10 с = подозрительно
+  if (jd_last_refresh_wait_ms < 10000UL) {   // ВРЕМЕННО: ожидание обновления слишком короткое
     for (int n = 0; n < 3; n++) {
-      blink(LED_GREEN);            // 0xE0, вероятно, зелёный
+      blink(LED_GREEN);
       sl_udelay_wait(250000);
     }
   }
