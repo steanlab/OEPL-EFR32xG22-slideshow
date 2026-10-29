@@ -19,7 +19,7 @@ extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 #define LONG_PRESS_ACTION    3
 
 // Батарея (CR2450)
-#define BATT_CRIT_MV         2400                     // критический уровень, мВ
+#define BATT_CRIT_MV         4000                     // критический уровень, мВ
 #define BATT_CHECK_PERIOD_MS (10UL * 60UL * 1000UL)   // период проверки и серии вспышек
 #define BATT_READOUT_AT_BOOT 1                        // 1 = при включении показать напряжение вспышками
 
