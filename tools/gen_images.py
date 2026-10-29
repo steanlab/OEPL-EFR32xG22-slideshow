@@ -8,8 +8,7 @@ Usage: gen_images.py <src_dir> <out_header> [width] [height] [xshift]
   width       panel width in px   (default 200)
   height      panel height in px  (default 200)
   xshift      columns to shift the picture right with wrap-around, to
-              compensate for the panel's own shift (default 16 for the
-              Solum EL016F5W4C)
+              compensate for the panel's own shift (default 0)
 
 Bitmap format of every image: [width, height, rows...], each row is
 ceil(width / 8) bytes, MSB first, bit 1 = black pixel.
@@ -26,7 +25,7 @@ src = sys.argv[1]
 out = sys.argv[2]
 W = int(sys.argv[3]) if len(sys.argv) > 3 else 200
 H = int(sys.argv[4]) if len(sys.argv) > 4 else 200
-XSHIFT = int(sys.argv[5]) if len(sys.argv) > 5 else 16
+XSHIFT = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 
 if W > 255 or H > 255:
     sys.exit("ERROR: width and height must be <= 255 (they are stored in one byte each).")
