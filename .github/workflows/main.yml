@@ -42,7 +42,7 @@ jobs:
       - name: Generate slideshow images
         run: |
           pip install pillow
-          python tools/gen_images.py work_images firmware/images.h 200 200 16
+          python tools/gen_images.py work_images firmware/images.h 200 200 0
       - name: Build Docker builder image
         run: |
           docker build \
