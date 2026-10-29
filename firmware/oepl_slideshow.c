@@ -10,31 +10,39 @@
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 
 // ---------------- Настройки ----------------
-#define SLIDE_PERIOD_MS    (60UL * 60UL * 1000UL)   // период автосмены
-#define TITLE_HOLD_MS      (30UL * 1000UL)          // заглавный слайд после включения
-#define TAP_IGNORE_MS      5000UL                   // защита от повторных срабатываний NFC
-#define LONG_PRESS_MS      1500UL                   // порог долгого нажатия
-#define BTN_PRESSED_LEVEL  0                        // уровень на пине при нажатой кнопке
+#define SLIDE_PERIOD_MS      (60UL * 60UL * 1000UL)   // период автосмены
+#define TITLE_HOLD_MS        (30UL * 1000UL)          // заглавный слайд после включения
+#define TAP_IGNORE_MS        5000UL                   // защита от повторных срабатываний NFC
+#define LONG_PRESS_MS        1500UL                   // порог долгого нажатия
+#define BTN_PRESSED_LEVEL    0                        // уровень на пине при нажатой кнопке
 // Долгое нажатие: 1 = предыдущая картинка, 2 = заглавный слайд, 3 = пауза/продолжение автосмены
-#define LONG_PRESS_ACTION  3
+#define LONG_PRESS_ACTION    3
+
+// Батарея (CR2450)
+#define BATT_CRIT_MV         2400                     // критический уровень, мВ
+#define BATT_CHECK_PERIOD_MS (10UL * 60UL * 1000UL)   // период проверки и серии вспышек
+#define BATT_READOUT_AT_BOOT 1                        // 1 = при включении показать напряжение вспышками
 
 // Цвета светодиода на этой плате
-#define LED_RED    0x03   // ручная смена (NFC или короткое нажатие)
+#define LED_RED    0x03   // ручная смена (NFC или короткое нажатие), критический разряд
 #define LED_BLUE   0x1C   // смена по таймеру
-#define LED_GREEN  0xE0   // долгое нажатие
+#define LED_GREEN  0xE0   // долгое нажатие, вывод напряжения
 
 typedef enum { REQ_NONE, REQ_NEXT, REQ_PREV, REQ_TITLE } request_t;
 
 static sl_sleeptimer_timer_handle_t timer;
 static sl_sleeptimer_timer_handle_t long_timer;
+static sl_sleeptimer_timer_handle_t batt_timer;
 static volatile bool due = true;
 static volatile bool tap = false;
 static volatile bool btn_short = false;
 static volatile bool btn_long = false;
 static volatile bool btn_down = false;
 static volatile bool btn_long_fired = false;
+static volatile bool batt_check = false;
 static volatile bool busy = false;
 static bool paused = false;
+static bool critical = false;
 static bool boot_done = false;
 static uint32_t last_tap_tick = 0;
 static size_t cur_shown = 0;
@@ -97,11 +105,17 @@ static size_t next_index(void)
   return order[order_pos++];
 }
 
-// ---------------- Таймер, NFC, кнопка, светодиод ----------------------------
+// ---------------- Таймеры, NFC, кнопка, светодиод ---------------------------
 static void on_timer(sl_sleeptimer_timer_handle_t *h, void *d)
 {
   (void)h; (void)d;
   due = true;
+}
+
+static void on_batt_timer(sl_sleeptimer_timer_handle_t *h, void *d)
+{
+  (void)h; (void)d;
+  batt_check = true;
 }
 
 static void on_long_timer(sl_sleeptimer_timer_handle_t *h, void *d)
@@ -158,6 +172,15 @@ static void on_gpio(oepl_hw_gpio_channel_t ch, oepl_hw_gpio_event_t ev)
   }
 }
 
+static void delay_ms(uint32_t ms)
+{
+  while (ms >= 100) {
+    sl_udelay_wait(100000);
+    ms -= 100;
+  }
+  sl_udelay_wait(ms * 1000);
+}
+
 static void blink(uint8_t color)
 {
   oepl_hw_set_led(color, true);
@@ -165,20 +188,92 @@ static void blink(uint8_t color)
   oepl_hw_set_led(color, false);
 }
 
+// ---------------- Батарея ---------------------------------------------------
+static uint16_t read_battery_mv(void)
+{
+  uint16_t best = 0;
+  for (int n = 0; n < 3; n++) {     // наибольшее из трёх замеров отсекает случайные провалы
+    uint16_t mv = 0;
+    if (oepl_hw_get_voltage(&mv, true) && mv > best) {
+      best = mv;
+    }
+    sl_udelay_wait(10000);
+  }
+  return best;
+}
+
+static bool battery_is_critical(void)
+{
+  if (critical) {
+    return true;                    // однажды признанный критическим, остаётся таким до сброса
+  }
+  uint16_t mv = read_battery_mv();
+  if (mv != 0 && mv <= BATT_CRIT_MV) {
+    critical = true;
+  }
+  return critical;
+}
+
+static void flash_critical(void)
+{
+  for (int n = 0; n < 5; n++) {     // серия из 5 красных вспышек
+    blink(LED_RED);
+    delay_ms(200);
+  }
+}
+
+#if BATT_READOUT_AT_BOOT
+static void blink_digit(int d)
+{
+  if (d == 0) {                     // ноль = одна очень короткая вспышка
+    oepl_hw_set_led(LED_GREEN, true);
+    sl_udelay_wait(40000);
+    oepl_hw_set_led(LED_GREEN, false);
+  } else {
+    for (int n = 0; n < d; n++) {
+      blink(LED_GREEN);
+      delay_ms(250);
+    }
+  }
+  delay_ms(1200);                   // пауза между цифрами
+}
+
+static void battery_readout(void)
+{
+  // Три группы зелёных вспышек: единицы вольт, десятые, сотые. 2,87 В = 2, 8, 7 вспышек.
+  uint16_t mv = read_battery_mv();
+  blink_digit(mv / 1000);
+  blink_digit((mv / 100) % 10);
+  blink_digit((mv / 10) % 10);
+}
+#endif
+
+// ---------------- Основной цикл ---------------------------------------------
 void slideshow_init(void)
 {
   oepl_hw_init();
   oepl_hw_init_gpio(on_gpio);
+#if BATT_READOUT_AT_BOOT
+  battery_readout();
+#endif
   sl_sleeptimer_start_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
+  sl_sleeptimer_start_periodic_timer_ms(&batt_timer, BATT_CHECK_PERIOD_MS, on_batt_timer, NULL, 0, 0);
 }
 
 bool slideshow_is_event_pending(void)
 {
-  return due || tap || btn_short || btn_long;
+  return due || tap || btn_short || btn_long || batt_check;
 }
 
 void slideshow_process(void)
 {
+  if (batt_check) {
+    batt_check = false;
+    if (battery_is_critical()) {
+      flash_critical();
+    }
+  }
+
   request_t req = REQ_NONE;
   uint8_t led = LED_BLUE;
 
@@ -197,7 +292,7 @@ void slideshow_process(void)
       due = false;
       for (int n = 0; n < 3; n++) {      // 3 вспышки = пауза
         blink(LED_GREEN);
-        sl_udelay_wait(200000);
+        delay_ms(200);
       }
     } else {
       sl_sleeptimer_restart_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
@@ -222,6 +317,14 @@ void slideshow_process(void)
   due = false;
   tap = false;
   btn_short = false;
+
+  // Перед обновлением экрана проверяем батарею. При критическом разряде экран не трогаем:
+  // на панели остаётся последний слайд, светодиод показывает серию красных вспышек.
+  if (battery_is_critical()) {
+    flash_critical();
+    return;
+  }
+
   busy = true;
 
   size_t shown;
