@@ -32,6 +32,11 @@
 #include <sl_iostream_handles.h>
 #include "sl_rail_util_init.h"
 #include "rail.h"
+#ifdef SLIDESHOW
+#define BTN_FALLING true
+#else
+#define BTN_FALLING false
+#endif
 
 // Todo: abstract away for boards
 
@@ -428,7 +433,7 @@ void oepl_hw_init_gpio(oepl_hw_gpio_cb_t cb)
                       button1_hwval & 0xF,
                       interrupt,
                       true,
-                      false,
+                      BTN_FALLING,
                       true);
     GPIO_IntClear(1<<(button1_hwval & 0xF));
     GPIO_IntEnable(1<<(button1_hwval & 0xF));
@@ -444,7 +449,7 @@ void oepl_hw_init_gpio(oepl_hw_gpio_cb_t cb)
                       button2_hwval & 0xF,
                       interrupt,
                       true,
-                      false,
+                      BTN_FALLING,
                       true);
     GPIO_IntClear(1<<(button2_hwval & 0xF));
     GPIO_IntEnable(1<<(button2_hwval & 0xF));
