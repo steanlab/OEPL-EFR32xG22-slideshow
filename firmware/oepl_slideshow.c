@@ -1,31 +1,44 @@
 #include "oepl_slideshow.h"
 #include "oepl_display.h"
 #include "oepl_hw_abstraction.h"
+#include "oepl_efr32_hwtypes.h"
+#include "em_gpio.h"
 #include "sl_sleeptimer.h"
 #include "sl_udelay.h"
 #include "images.h"
 
 extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 
-#define SLIDE_PERIOD_MS  (60UL * 60UL * 1000UL)   // период смены
-#define TITLE_HOLD_MS    (30UL * 1000UL)          // сколько держится заглавный слайд
-#define TAP_IGNORE_MS    5000UL                   // защита от повторных срабатываний NFC
-#define MIN_GAP_MS       0UL                      // 0 = без ограничения между касаниями
-#define DEBUG_SEQUENTIAL 1                        // ВРЕМЕННО: 1 = по порядку, пауза 5 с; 0 = обычный режим
+// ---------------- Настройки ----------------
+#define SLIDE_PERIOD_MS    (60UL * 60UL * 1000UL)   // период автосмены
+#define TITLE_HOLD_MS      (30UL * 1000UL)          // заглавный слайд после включения
+#define TAP_IGNORE_MS      5000UL                   // защита от повторных срабатываний NFC
+#define LONG_PRESS_MS      1500UL                   // порог долгого нажатия
+#define BTN_PRESSED_LEVEL  0                        // уровень на пине при нажатой кнопке
+// Долгое нажатие: 1 = предыдущая картинка, 2 = заглавный слайд, 3 = пауза/продолжение автосмены
+#define LONG_PRESS_ACTION  3
 
 // Цвета светодиода на этой плате
-#define LED_RED    0x03   // смена по касанию NFC
+#define LED_RED    0x03   // ручная смена (NFC или короткое нажатие)
 #define LED_BLUE   0x1C   // смена по таймеру
-#define LED_GREEN  0xE0   // касание слишком рано (при MIN_GAP_MS > 0)
+#define LED_GREEN  0xE0   // долгое нажатие
+
+typedef enum { REQ_NONE, REQ_NEXT, REQ_PREV, REQ_TITLE } request_t;
 
 static sl_sleeptimer_timer_handle_t timer;
+static sl_sleeptimer_timer_handle_t long_timer;
 static volatile bool due = true;
 static volatile bool tap = false;
-static volatile bool rejected = false;
+static volatile bool btn_short = false;
+static volatile bool btn_long = false;
+static volatile bool btn_down = false;
+static volatile bool btn_long_fired = false;
 static volatile bool busy = false;
+static bool paused = false;
+static bool boot_done = false;
 static uint32_t last_tap_tick = 0;
-static uint32_t last_draw_end_tick = 0;
-static bool have_drawn = false;
+static size_t cur_shown = 0;
+static size_t prev_shown = 0;
 
 // ---------------- Порядок показа: заглавный слайд, затем случайно -----------
 static bool first_slide = true;
@@ -71,15 +84,8 @@ static void reshuffle(void)
 
 static size_t next_index(void)
 {
-#if DEBUG_SEQUENTIAL
-  static size_t seq = 0;
-  size_t i = seq;
-  seq = (seq + 1) % IMG_COUNT;
-  return i;                         // 0, 1, 2, ... по алфавиту, потом снова 0
-#else
   if (first_slide) {
     first_slide = false;
-    last_shown = 0;
     return 0;                       // заглавный слайд
   }
   if (IMG_COUNT <= 1) {
@@ -88,34 +94,68 @@ static size_t next_index(void)
   if (order_pos >= order_len) {
     reshuffle();
   }
-  last_shown = order[order_pos++];
-  return last_shown;
-#endif
+  return order[order_pos++];
 }
 
-// ---------------- Таймер, NFC, светодиод ------------------------------------
+// ---------------- Таймер, NFC, кнопка, светодиод ----------------------------
 static void on_timer(sl_sleeptimer_timer_handle_t *h, void *d)
 {
   (void)h; (void)d;
   due = true;
 }
 
+static void on_long_timer(sl_sleeptimer_timer_handle_t *h, void *d)
+{
+  (void)h; (void)d;
+  if (btn_down) {
+    btn_long_fired = true;          // после этого отпускание не считается коротким нажатием
+    if (!busy) {
+      btn_long = true;
+    }
+  }
+}
+
+static bool button_is_down(oepl_hw_gpio_channel_t ch)
+{
+  const oepl_efr32xg22_tagconfig_t* cfg = oepl_efr32xg22_get_config();
+  if (cfg == NULL || cfg->gpio == NULL) {
+    return false;
+  }
+  const oepl_efr32xg22_gpio_t* b = (ch == BUTTON_1) ? &cfg->gpio->button1 : &cfg->gpio->button2;
+  if (b->port == gpioPortInvalid) {
+    return false;
+  }
+  return GPIO_PinInGet(b->port, b->pin) == BTN_PRESSED_LEVEL;
+}
+
 static void on_gpio(oepl_hw_gpio_channel_t ch, oepl_hw_gpio_event_t ev)
 {
-  (void)ev;
-  if (ch != NFC_WAKE || busy) {
-    return;
+  (void)ev;   // событие не различает фронты, поэтому читаем уровень на пине сами
+
+  if (ch == NFC_WAKE) {
+    if (busy) {
+      return;
+    }
+    uint32_t now = sl_sleeptimer_get_tick_count();
+    if (sl_sleeptimer_tick_to_ms(now - last_tap_tick) < TAP_IGNORE_MS) {
+      return;
+    }
+    last_tap_tick = now;
+    tap = true;
+  } else if (ch == BUTTON_1 || ch == BUTTON_2) {
+    bool down = button_is_down(ch);
+    if (down && !btn_down) {
+      btn_down = true;
+      btn_long_fired = false;
+      sl_sleeptimer_restart_timer_ms(&long_timer, LONG_PRESS_MS, on_long_timer, NULL, 0, 0);
+    } else if (!down && btn_down) {
+      btn_down = false;
+      sl_sleeptimer_stop_timer(&long_timer);
+      if (!btn_long_fired && !busy) {
+        btn_short = true;
+      }
+    }
   }
-  uint32_t now = sl_sleeptimer_get_tick_count();
-  if (sl_sleeptimer_tick_to_ms(now - last_tap_tick) < TAP_IGNORE_MS) {
-    return;
-  }
-  last_tap_tick = now;
-  if (have_drawn && sl_sleeptimer_tick_to_ms(now - last_draw_end_tick) < MIN_GAP_MS) {
-    rejected = true;
-    return;
-  }
-  tap = true;
 }
 
 static void blink(uint8_t color)
@@ -134,36 +174,82 @@ void slideshow_init(void)
 
 bool slideshow_is_event_pending(void)
 {
-  return due || tap || rejected;
+  return due || tap || btn_short || btn_long;
 }
 
 void slideshow_process(void)
 {
-  if (rejected) {
-    rejected = false;
-    blink(LED_GREEN);
+  request_t req = REQ_NONE;
+  uint8_t led = LED_BLUE;
+
+  if (btn_long) {
+    btn_long = false;
+#if LONG_PRESS_ACTION == 1
+    req = REQ_PREV;
+    led = LED_GREEN;
+#elif LONG_PRESS_ACTION == 2
+    req = REQ_TITLE;
+    led = LED_GREEN;
+#else
+    paused = !paused;
+    if (paused) {
+      sl_sleeptimer_stop_timer(&timer);
+      due = false;
+      for (int n = 0; n < 3; n++) {      // 3 вспышки = пауза
+        blink(LED_GREEN);
+        sl_udelay_wait(200000);
+      }
+    } else {
+      sl_sleeptimer_restart_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
+      blink(LED_GREEN);                  // 1 вспышка = продолжение
+    }
+#endif
   }
-  if (!due && !tap) {
+
+  if (req == REQ_NONE) {
+    if (tap || btn_short) {
+      req = REQ_NEXT;
+      led = LED_RED;
+    } else if (due) {
+      req = REQ_NEXT;
+      led = LED_BLUE;
+    }
+  }
+  if (req == REQ_NONE) {
     return;
   }
-  bool by_tap = tap;
+
   due = false;
   tap = false;
+  btn_short = false;
   busy = true;
 
-  size_t shown = next_index();
-  blink(by_tap ? LED_RED : LED_BLUE);
+  size_t shown;
+  if (req == REQ_TITLE) {
+    shown = 0;
+  } else if (req == REQ_PREV) {
+    shown = prev_shown;
+  } else {
+    shown = next_index();
+  }
+
+  bool is_boot = !boot_done;
+  boot_done = true;
+
+  blink(led);
   oepl_display_slideshow_draw(images[shown]);
 
-  last_draw_end_tick = sl_sleeptimer_get_tick_count();
-  have_drawn = true;
-  busy = false;
-  tap = false;
-  rejected = false;
+  prev_shown = cur_shown;
+  cur_shown = shown;
+  last_shown = shown;
 
-  uint32_t wait_ms = (shown == 0 && IMG_COUNT > 1) ? TITLE_HOLD_MS : SLIDE_PERIOD_MS;
-#if DEBUG_SEQUENTIAL
-  wait_ms = 5UL * 1000UL;           // следующая смена через 5 с после обновления
-#endif
-  sl_sleeptimer_restart_timer_ms(&timer, wait_ms, on_timer, NULL, 0, 0);
+  busy = false;
+  tap = false;            // нажатия и касания во время обновления экрана игнорируем
+  btn_short = false;
+
+  if (!paused) {
+    // Заглавный слайд после включения держим недолго, остальные по обычному периоду
+    uint32_t wait_ms = (is_boot && IMG_COUNT > 1) ? TITLE_HOLD_MS : SLIDE_PERIOD_MS;
+    sl_sleeptimer_restart_timer_ms(&timer, wait_ms, on_timer, NULL, 0, 0);
+  }
 }
