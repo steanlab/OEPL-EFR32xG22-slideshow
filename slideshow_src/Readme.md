@@ -44,6 +44,20 @@ embeds it in the firmware. Flash the resulting `.hex` file to the tag.
   low-contrast photos can end up almost blank.
 - Transparent PNGs are placed on a white background.
 
+## Tone calibration
+
+E-paper black dots spread into neighboring white dots, so midtones look
+darker than they should. `tools/tone_curve.json` stores the measured response
+of the panel, and the converter compensates for it automatically.
+
+To recalibrate (different panel, lighting, or batch):
+1. `python make_calibration.py tone` creates `cal_tone.zip`.
+2. Put it into `slideshow_src/` instead of your images, build, and flash.
+3. Photograph the panel in even light and crop to the outer edge of the black frame.
+4. `python calibrate_tone.py photo.jpg` writes `tone_curve.json`. Do it twice and
+   average the two curves (measurements differ by a few percent).
+5. Upload the file to `tools/` and restore your image archive.
+
 ## Limits
 
 - Each image takes about 5 KB of flash. Roughly 34 images fit with a safety
