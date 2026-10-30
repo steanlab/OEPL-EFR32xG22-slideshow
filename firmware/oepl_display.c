@@ -359,24 +359,60 @@ void oepl_display_draw(oepl_display_draw_done_cb_t cb)
 #ifdef SLIDESHOW
 static const uint8_t* slideshow_bmp = NULL;
 
-// Заменяет движок рисования: строка берётся прямо из битмапа
+// Заменяет движок рисования: строка берётся прямо из битмапа.
+// Формат: [fmt, w_lo, w_hi, h_lo, h_hi, строки...]
+//   fmt 1: 1 бит на пиксель (1 = чёрный)
+//   fmt 2: 2 бита на пиксель (0 белый, 1 чёрный, 2 красный, 3 жёлтый), старшие биты слева
 void slideshow_render_line(uint8_t* buf, uint16_t y, int color)
 {
-  if (slideshow_bmp == NULL || color != COLOR_BLACK) {
-    return;                      // красный и жёлтый слои остаются пустыми
+  if (slideshow_bmp == NULL) {
+    return;
   }
-  size_t h = slideshow_bmp[1];
+  const uint8_t* b = slideshow_bmp;
+  size_t w = b[1] | ((size_t)b[2] << 8);
+  size_t h = b[3] | ((size_t)b[4] << 8);
   if (y >= h) {
     return;
   }
-  size_t row_bytes = ((size_t)slideshow_bmp[0] + 7) / 8;
-  memcpy(buf, &slideshow_bmp[2 + (size_t)y * row_bytes], row_bytes);
+  const uint8_t* data = &b[5];
+
+  if (b[0] == 1) {
+    if (color != COLOR_BLACK) {
+      return;                      // красный и жёлтый слои пусты
+    }
+    size_t rb = (w + 7) / 8;
+    memcpy(buf, &data[(size_t)y * rb], rb);
+  } else if (b[0] == 2) {
+    uint8_t want;
+    if (color == COLOR_BLACK) {
+      want = 1;
+    } else if (color == COLOR_RED) {
+      want = 2;
+    } else if (color == COLOR_YELLOW) {
+      want = 3;
+    } else {
+      return;
+    }
+    size_t rb = (w + 3) / 4;
+    const uint8_t* row = &data[(size_t)y * rb];
+    for (size_t x = 0; x < w; x++) {
+      uint8_t code = (row[x >> 2] >> (6 - 2 * (x & 3))) & 3;
+      if (code == want) {
+        buf[x >> 3] |= (uint8_t)(0x80 >> (x & 7));
+      }
+    }
+  }
 }
 
 void oepl_display_slideshow_draw(const uint8_t* bitmap)
 {
   if (driver == NULL) {
     return;
+  }
+  size_t w = bitmap[1] | ((size_t)bitmap[2] << 8);
+  size_t h = bitmap[3] | ((size_t)bitmap[4] << 8);
+  if (w != xres || h != yres) {
+    return;                        // размер картинки не совпадает с панелью: ничего не рисуем
   }
   slideshow_bmp = bitmap;
   is_drawing = true;
