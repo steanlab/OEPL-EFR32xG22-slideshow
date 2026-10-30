@@ -21,7 +21,7 @@ extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
 // Батарея (CR2450)
 #define BATT_CRIT_MV         2400                     // критический уровень, мВ
 #define BATT_CHECK_PERIOD_MS (10UL * 60UL * 1000UL)   // период проверки и серии вспышек
-#define BATT_READOUT_AT_BOOT 1                        // 1 = при включении показать напряжение вспышками
+#define BATT_READOUT_AT_BOOT 0                        // 1 = при включении показать напряжение вспышками
 
 // Цвета светодиода на этой плате
 #define LED_RED    0x03   // ручная смена (NFC или короткое нажатие), критический разряд
