@@ -117,7 +117,7 @@ include:
     - {path: fonts.h}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
-- {value: debug, option: optimize}
+- {value: size, option: optimize}
 component:
 - {id: EFR32BG22C224F512IM40}
 - {id: bootloader_app_properties}
