@@ -38,8 +38,8 @@ embeds it in the firmware. Flash the resulting `.hex` file to the tag.
 
 - The display is 200×200 px, so square images work best. Other shapes are
   center-cropped to a square.
-- Only black and white are used. Colors and grays are converted to dithered
-  black and white; red and yellow are not used.
+- | `_bw` | Force black-and-white (1 bit per pixel, 5 KB). Use for sepia-toned engravings or photos that should stay monochrome. |
+- | `_color` | Force the 4-color mode (black, white, red, yellow; 10 KB per slide). Without a suffix the converter decides by the share of strongly colored pixels. |
 - High-contrast pictures, logos, and line art look best. Very light or
   low-contrast photos can end up almost blank.
 - Transparent PNGs are placed on a white background.
