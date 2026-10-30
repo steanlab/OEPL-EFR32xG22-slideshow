@@ -42,7 +42,7 @@ jobs:
       - name: Generate slideshow images
         run: |
           pip install pillow
-          python tools/gen_images.py work_images firmware/images.h 200 200 0 --tone tools/tone_curve.json --preview preview.png
+          python tools/gen_images.py work_images firmware/images.h 200 200 0 --tone tools/tone_curve.json --palette tools/palette.json --preview preview.png
 
       - name: Upload preview sheet
         uses: actions/upload-artifact@v4
