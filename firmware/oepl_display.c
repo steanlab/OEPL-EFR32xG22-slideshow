@@ -27,6 +27,10 @@
 #include "oepl_efr32_hwtypes.h"
 #include "oepl_hw_abstraction.h"
 #include "sl_power_manager.h"
+#ifdef SLIDESHOW
+#include <stdlib.h>
+#include "uzlib.h"
+#endif
 
 // -----------------------------------------------------------------------------
 //                              Configuration values
@@ -357,32 +361,53 @@ void oepl_display_draw(oepl_display_draw_done_cb_t cb)
 }
 
 #ifdef SLIDESHOW
-static const uint8_t* slideshow_bmp = NULL;
+#ifndef SLIDESHOW_ZDEC
+#define SLIDESHOW_ZDEC 1       // 0 = выключить поддержку сжатых слайдов (тогда сборка с --no-compress)
+#endif
+
+static const uint8_t* slideshow_pix = NULL;     // начало строк пикселей (во флэш или в буфере)
+static const uint8_t* slideshow_hdr = NULL;     // заголовок слайда
+
+#if SLIDESHOW_ZDEC
+static int zd_cb(TINF_DATA *d)
+{
+  (void)d;
+  return -1;                                    // данные кончились
+}
+
+static uint16_t fletcher16(const uint8_t* p, size_t n)
+{
+  uint16_t s1 = 0, s2 = 0;
+  for (size_t i = 0; i < n; i++) {
+    s1 = (uint16_t)((s1 + p[i]) % 255);
+    s2 = (uint16_t)((s2 + s1) % 255);
+  }
+  return (uint16_t)((s2 << 8) | s1);
+}
+#endif
 
 // Заменяет движок рисования: строка берётся прямо из битмапа.
-// Формат: [fmt, w_lo, w_hi, h_lo, h_hi, строки...]
-//   fmt 1: 1 бит на пиксель (1 = чёрный)
-//   fmt 2: 2 бита на пиксель (0 белый, 1 чёрный, 2 красный, 3 жёлтый), старшие биты слева
+//   [fmt, w_lo, w_hi, h_lo, h_hi, ...]  fmt & 3: 1 = 1 бит/пиксель, 2 = 2 бита/пиксель
 void slideshow_render_line(uint8_t* buf, uint16_t y, int color)
 {
-  if (slideshow_bmp == NULL) {
+  if (slideshow_hdr == NULL || slideshow_pix == NULL) {
     return;
   }
-  const uint8_t* b = slideshow_bmp;
+  const uint8_t* b = slideshow_hdr;
+  uint8_t kind = b[0] & 3;
   size_t w = b[1] | ((size_t)b[2] << 8);
   size_t h = b[3] | ((size_t)b[4] << 8);
   if (y >= h) {
     return;
   }
-  const uint8_t* data = &b[5];
 
-  if (b[0] == 1) {
+  if (kind == 1) {
     if (color != COLOR_BLACK) {
       return;                      // красный и жёлтый слои пусты
     }
     size_t rb = (w + 7) / 8;
-    memcpy(buf, &data[(size_t)y * rb], rb);
-  } else if (b[0] == 2) {
+    memcpy(buf, &slideshow_pix[(size_t)y * rb], rb);
+  } else if (kind == 2) {
     uint8_t want;
     if (color == COLOR_BLACK) {
       want = 1;
@@ -394,7 +419,7 @@ void slideshow_render_line(uint8_t* buf, uint16_t y, int color)
       return;
     }
     size_t rb = (w + 3) / 4;
-    const uint8_t* row = &data[(size_t)y * rb];
+    const uint8_t* row = &slideshow_pix[(size_t)y * rb];
     for (size_t x = 0; x < w; x++) {
       uint8_t code = (row[x >> 2] >> (6 - 2 * (x & 3))) & 3;
       if (code == want) {
@@ -404,20 +429,66 @@ void slideshow_render_line(uint8_t* buf, uint16_t y, int color)
   }
 }
 
-void oepl_display_slideshow_draw(const uint8_t* bitmap)
+// Возвращает true, если слайд был нарисован. При любой ошибке экран не трогается.
+bool oepl_display_slideshow_draw(const uint8_t* bitmap)
 {
   if (driver == NULL) {
-    return;
+    return false;
   }
+  uint8_t fmt = bitmap[0];
+  uint8_t kind = fmt & 3;
   size_t w = bitmap[1] | ((size_t)bitmap[2] << 8);
   size_t h = bitmap[3] | ((size_t)bitmap[4] << 8);
-  if (w != xres || h != yres) {
-    return;                        // размер картинки не совпадает с панелью: ничего не рисуем
+  if (w != xres || h != yres || (kind != 1 && kind != 2)) {
+    return false;                  // размер слайда не совпадает с панелью
   }
-  slideshow_bmp = bitmap;
+
+  uint8_t* fb = NULL;
+  if (fmt & 0x80) {
+#if SLIDESHOW_ZDEC
+    size_t rb = (kind == 1) ? (w + 7) / 8 : (w + 3) / 4;
+    size_t total = rb * h;
+    uint16_t ck = bitmap[5] | ((uint16_t)bitmap[6] << 8);
+    size_t clen = bitmap[7] | ((size_t)bitmap[8] << 8);
+
+    fb = (uint8_t*)malloc(total);
+    if (fb == NULL) {
+      return false;
+    }
+    static TINF_DATA zd;
+    memset(&zd, 0, sizeof(zd));
+    uzlib_init();
+    zd.source = &bitmap[9];
+    zd.source_limit = &bitmap[9] + clen;
+    zd.source_read_cb = zd_cb;
+    uzlib_uncompress_init(&zd, NULL, 0);
+    zd.dest_start = fb;
+    zd.dest = fb;
+    zd.dest_limit = fb + total;
+    int r = uzlib_uncompress(&zd);
+    if (r < 0 || zd.dest != zd.dest_limit || fletcher16(fb, total) != ck) {
+      free(fb);
+      return false;
+    }
+    slideshow_pix = fb;
+#else
+    return false;
+#endif
+  } else {
+    slideshow_pix = &bitmap[5];
+  }
+
+  slideshow_hdr = bitmap;
   is_drawing = true;
   driver->draw();
   is_drawing = false;
+
+  slideshow_hdr = NULL;
+  slideshow_pix = NULL;
+  if (fb != NULL) {
+    free(fb);
+  }
+  return true;
 }
 #endif
 // -----------------------------------------------------------------------------
