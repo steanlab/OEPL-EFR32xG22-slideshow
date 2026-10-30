@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Convert images to bitmaps (1-bit black/white or 2-bit 4-color) as a C header.
+"""Convert images to bitmaps (1-bit black/white or 2-bit 4-color), optionally
+deflate-compressed, and write them as a C header.
 
 Usage:
   gen_images.py <src_dir> <out_header> [width] [height] [xshift]
-                [--tone tone_curve.json] [--palette palette.json] [--preview preview.png]
+                [--tone tone_curve.json] [--palette palette.json]
+                [--preview preview.png] [--no-compress] [--budget BYTES]
 
 Per-image options are file name suffixes (see slideshow_src/README.md):
   _bw _color          force the 1-bit or the 4-color format (default: automatic)
@@ -11,14 +13,17 @@ Per-image options are file name suffixes (see slideshow_src/README.md):
   _inv                invert
   _raw                image is already 1-bit at panel size, use as-is
 
-Image format (all numbers little endian):
-  byte 0      format: 1 = 1 bit/pixel, 2 = 2 bits/pixel
-  bytes 1-2   width, bytes 3-4 height
-  then rows, MSB first.
+Image format (little endian):
+  byte 0     format: 1 = 1 bit/pixel, 2 = 2 bits/pixel; +0x80 = compressed
+  bytes 1-2  width, bytes 3-4 height
+  uncompressed: rows follow, MSB first
+  compressed:  bytes 5-6 Fletcher-16 of the rows, bytes 7-8 length of the
+               raw-deflate stream, then the stream (rows after decompression)
   format 1: bit 1 = black pixel
   format 2: code 0 = white, 1 = black, 2 = red, 3 = yellow
 """
 import argparse
+import colorsys
 import glob
 import json
 import os
@@ -29,8 +34,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 ALGOS = ("thr", "atk", "fs", "ord")
-COLOR_SHARE_MIN = 0.10      # share of strongly colored pixels above which an image is stored as color
-CHROMA_MIN = 100            # max(R,G,B) - min(R,G,B) above which a pixel counts as colored
+COLOR_C60_MIN = 0.05        # share of clearly colored pixels above which an image is stored as color
+MIN_GAIN = 0.10             # store compressed only if it is at least 10% smaller
 
 KERNEL_FS = [(1, 0, 7 / 16), (-1, 1, 3 / 16), (0, 1, 5 / 16), (1, 1, 1 / 16)]
 KERNEL_ATK = [(1, 0, 1 / 8), (2, 0, 1 / 8), (-1, 1, 1 / 8),
@@ -225,22 +230,8 @@ def stretch_rgb(im):
     return im.point(lut * 3)
 
 
-def color_share(im, W, H):
-    px = im.load()
-    n = 0
-    for y in range(H):
-        for x in range(W):
-            r, g, b = px[x, y]
-            if max(r, g, b) - min(r, g, b) > CHROMA_MIN:
-                n += 1
-    return n / float(W * H)
-
-LAST_STATS = [0.0, 0.0, 0.0]
-
-
 def color_stats(im, W, H):
-    """Extra numbers for tuning the color/bw decision: chroma shares and hue diversity."""
-    import colorsys
+    """Numbers for the color/bw decision: share of pixels with chroma > 30 and > 60, hue spread."""
     px = im.load()
     n30 = n60 = 0
     bins = [0] * 12
@@ -259,18 +250,18 @@ def color_stats(im, W, H):
     best = max(bins[i] + bins[(i - 1) % 12] + bins[(i + 1) % 12] for i in range(12))
     return n30 / float(W * H), n60 / float(W * H), 1.0 - best / float(n30)
 
+
 def process(path, W, H, tone, pal_rel):
-    """Returns (kind, matrix, label, mid-tone share, colorfulness). kind 1 = bw, 2 = color."""
+    """Returns (kind, matrix, label, mid-tone share, (c30, c60, hue)). kind 1 = bw, 2 = color."""
     algo, inv, raw, fmt = parse_flags(path)
     if raw:
         px = load_gray(path, W, H).load()
         white = [[(px[x, y] >= 128) != inv for x in range(W)] for y in range(H)]
-        return 1, white, "raw", 0.0, 0.0
+        return 1, white, "raw", 0.0, (0.0, 0.0, 0.0)
 
     rgb = load_rgb(path, W, H)
-    share = color_share(rgb, W, H)
-    LAST_STATS[:] = color_stats(rgb, W, H)
-    use_color = (fmt == "color") or (fmt is None and share > COLOR_SHARE_MIN)
+    stats = color_stats(rgb, W, H)
+    use_color = (fmt == "color") or (fmt is None and stats[1] >= COLOR_C60_MIN)
     if inv:
         rgb = ImageOps.invert(rgb)
 
@@ -278,7 +269,8 @@ def process(path, W, H, tone, pal_rel):
     if use_color:
         rgb = stretch_rgb(rgb)
         pal_t = [[coverage_for(c, tone) for c in col] for col in pal_rel]
-        return 2, dither_color(rgb, W, H, lut, pal_t), "color", 0.0, share
+        label = "color" if fmt else "color (auto)"
+        return 2, dither_color(rgb, W, H, lut, pal_t), label, 0.0, stats
 
     gray = ImageOps.autocontrast(rgb.convert("L"), cutoff=1)
     hist = gray.histogram()
@@ -287,7 +279,7 @@ def process(path, W, H, tone, pal_rel):
     px = gray.load()
     cov = [[lut[px[x, y]] for x in range(W)] for y in range(H)]
     white = dither(cov, W, H, chosen)
-    return 1, white, (chosen if algo else chosen + " (auto)"), mid, share
+    return 1, white, (chosen if algo else chosen + " (auto)"), mid, stats
 
 
 def roll(mat, W, s):
@@ -327,6 +319,30 @@ def pack2(codes, W, H):
     return data
 
 
+def fletcher16(data):
+    s1 = s2 = 0
+    for b in data:
+        s1 = (s1 + b) % 255
+        s2 = (s2 + s1) % 255
+    return (s2 << 8) | s1
+
+
+def try_compress(raw, enabled):
+    """Returns (data, compressed?). Compressed form is used only if it is clearly smaller."""
+    payload = bytes(raw[5:])
+    ck = fletcher16(payload)
+    co = zlib.compressobj(9, zlib.DEFLATED, -15)
+    comp = co.compress(payload) + co.flush()
+    if zlib.decompress(comp, -15) != payload:               # self-check
+        sys.exit("ERROR: compression self-check failed")
+    if enabled and len(comp) < 65536 and len(comp) + 9 <= (1.0 - MIN_GAIN) * len(raw):
+        out = [raw[0] | 0x80, raw[1], raw[2], raw[3], raw[4],
+               ck & 255, ck >> 8, len(comp) & 255, len(comp) >> 8]
+        out.extend(comp)
+        return out, True
+    return raw, False
+
+
 def to_preview(kind, mat, W, H):
     im = Image.new("RGB", (W, H))
     px = im.load()
@@ -364,6 +380,9 @@ def main():
     ap.add_argument("--tone", default=None)
     ap.add_argument("--palette", default=None)
     ap.add_argument("--preview", default=None)
+    ap.add_argument("--no-compress", action="store_true")
+    ap.add_argument("--budget", type=int, default=220000,
+                    help="warn if all images together take more flash than this (bytes)")
     a = ap.parse_args()
     W, H = a.width, a.height
 
@@ -381,14 +400,15 @@ def main():
     pal_rel = palette_rel(load_palette(a.palette))
 
     preview = []
-    total = n_bw = n_color = 0
+    total = n_bw = n_color = n_z = 0
     with open(a.out, "w") as f:
         f.write("#pragma once\n#include <stdint.h>\n")
         f.write(f"#define IMG_COUNT {len(files)}\n")
         for i, path in enumerate(files):
-            kind, mat, label, mid, share = process(path, W, H, tone, pal_rel)
+            kind, mat, label, mid, stats = process(path, W, H, tone, pal_rel)
             rolled = roll(mat, W, a.xshift)
-            data = pack1(rolled, W, H) if kind == 1 else pack2(rolled, W, H)
+            raw = pack1(rolled, W, H) if kind == 1 else pack2(rolled, W, H)
+            data, packed = try_compress(raw, not a.no_compress)
 
             if kind == 1:
                 black = sum(1 for row in mat for v in row if not v)
@@ -406,15 +426,13 @@ def main():
                 note = "  <-- ALMOST BLANK" if cnt[0] == W * H else ""
                 n_color += 1
 
-            payload = bytes(data[5:])
-            co = zlib.compressobj(9, zlib.DEFLATED, -12)
-            comp = len(co.compress(payload) + co.flush())
+            n_z += 1 if packed else 0
             total += len(data)
             name = os.path.basename(path)
-            c30, c60, hue = LAST_STATS
-            print(f"[{i + 1:2d}] {name}: {label}, colorfulness {100 * share:3.0f}%, "
-                  f"c30 {100 * c30:3.0f}% c60 {100 * c60:3.0f}% hue {100 * hue:3.0f}%, {stat}, "
-                  f"{len(data)} B, deflate {100.0 * comp / len(payload):.0f}%{note}")
+            c30, c60, hue = stats
+            print(f"[{i + 1:2d}] {name}: {label}, c30 {100 * c30:3.0f}% c60 {100 * c60:3.0f}% "
+                  f"hue {100 * hue:3.0f}%, {stat}, {len(raw)} B -> {len(data)} B "
+                  f"{'z' if packed else 'raw'}{note}")
 
             f.write(f"static const uint8_t img{i}[] = {{{','.join(map(str, data))}}};\n")
             preview.append((name, label.split(" ")[0], to_preview(kind, mat, W, H)))
@@ -424,8 +442,11 @@ def main():
     if a.preview:
         make_preview(preview, W, H, a.preview)
         print("preview sheet ->", a.preview)
-    print(f"{len(files)} images ({n_bw} b/w, {n_color} color), {total} bytes of flash -> {a.out} "
-          f"({W}x{H}, xshift={a.xshift})")
+    print(f"{len(files)} images ({n_bw} b/w, {n_color} color, {n_z} compressed), "
+          f"{total} bytes of flash -> {a.out} ({W}x{H}, xshift={a.xshift})")
+    if total > a.budget:
+        print(f"WARNING: images take {total} bytes, more than the budget of {a.budget}; "
+              f"the firmware may not fit into flash")
 
 
 if __name__ == "__main__":
