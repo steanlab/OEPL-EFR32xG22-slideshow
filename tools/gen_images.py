@@ -235,6 +235,29 @@ def color_share(im, W, H):
                 n += 1
     return n / float(W * H)
 
+LAST_STATS = [0.0, 0.0, 0.0]
+
+
+def color_stats(im, W, H):
+    """Extra numbers for tuning the color/bw decision: chroma shares and hue diversity."""
+    import colorsys
+    px = im.load()
+    n30 = n60 = 0
+    bins = [0] * 12
+    for y in range(H):
+        for x in range(W):
+            r, g, b = px[x, y]
+            c = max(r, g, b) - min(r, g, b)
+            if c > 30:
+                n30 += 1
+                h = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)[0]
+                bins[int(h * 12) % 12] += 1
+                if c > 60:
+                    n60 += 1
+    if n30 == 0:
+        return 0.0, 0.0, 0.0
+    best = max(bins[i] + bins[(i - 1) % 12] + bins[(i + 1) % 12] for i in range(12))
+    return n30 / float(W * H), n60 / float(W * H), 1.0 - best / float(n30)
 
 def process(path, W, H, tone, pal_rel):
     """Returns (kind, matrix, label, mid-tone share, colorfulness). kind 1 = bw, 2 = color."""
@@ -246,6 +269,7 @@ def process(path, W, H, tone, pal_rel):
 
     rgb = load_rgb(path, W, H)
     share = color_share(rgb, W, H)
+    LAST_STATS[:] = color_stats(rgb, W, H)
     use_color = (fmt == "color") or (fmt is None and share > COLOR_SHARE_MIN)
     if inv:
         rgb = ImageOps.invert(rgb)
@@ -387,7 +411,9 @@ def main():
             comp = len(co.compress(payload) + co.flush())
             total += len(data)
             name = os.path.basename(path)
-            print(f"[{i + 1:2d}] {name}: {label}, colorfulness {100 * share:3.0f}%, {stat}, "
+            c30, c60, hue = LAST_STATS
+            print(f"[{i + 1:2d}] {name}: {label}, colorfulness {100 * share:3.0f}%, "
+                  f"c30 {100 * c30:3.0f}% c60 {100 * c60:3.0f}% hue {100 * hue:3.0f}%, {stat}, "
                   f"{len(data)} B, deflate {100.0 * comp / len(payload):.0f}%{note}")
 
             f.write(f"static const uint8_t img{i}[] = {{{','.join(map(str, data))}}};\n")
