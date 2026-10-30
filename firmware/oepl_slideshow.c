@@ -7,7 +7,7 @@
 #include "sl_udelay.h"
 #include "images.h"
 
-extern void oepl_display_slideshow_draw(const uint8_t* bitmap);
+extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
 
 // ---------------- Настройки ----------------
 #define SLIDE_PERIOD_MS      (60UL * 60UL * 1000UL)   // период автосмены
@@ -187,7 +187,15 @@ static void blink(uint8_t color)
   sl_udelay_wait(150000);   // 150 мс
   oepl_hw_set_led(color, false);
 }
-
+static void blink_error(void)
+{
+  for (int n = 0; n < 2; n++) {      // 2 длинные красные вспышки = слайд не удалось показать
+    oepl_hw_set_led(LED_RED, true);
+    sl_udelay_wait(600000);
+    oepl_hw_set_led(LED_RED, false);
+    delay_ms(300);
+  }
+}
 // ---------------- Батарея ---------------------------------------------------
 static uint16_t read_battery_mv(void)
 {
@@ -340,8 +348,9 @@ void slideshow_process(void)
   boot_done = true;
 
   blink(led);
-  oepl_display_slideshow_draw(images[shown]);
-
+    if (!oepl_display_slideshow_draw(images[shown])) {
+    blink_error();
+  }
   prev_shown = cur_shown;
   cur_shown = shown;
   last_shown = shown;
