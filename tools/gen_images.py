@@ -137,7 +137,7 @@ def process(path, W, H, tone):
         gray = ImageOps.invert(gray)
     hist = gray.histogram()
     mid = sum(hist[64:192]) / float(W * H)
-    chosen = algo or ("atk" if mid < 0.40 else "fs")       # simple heuristic, tunable
+    chosen = algo or ("atk" if mid < 0.08 else "fs")       # simple heuristic, tunable
     lut = [coverage_for(LIN[v], tone) for v in range(256)]
     px = gray.load()
     cov = [[lut[px[x, y]] for x in range(W)] for y in range(H)]
