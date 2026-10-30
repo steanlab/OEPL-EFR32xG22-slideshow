@@ -71,6 +71,20 @@ jobs:
             silabs-builder \
             sh -c "slc signature trust --sdk /gecko_sdk/ && ./build_all.sh"
 
+      - name: Firmware size
+        run: |
+          python3 - <<'EOF'
+          import glob
+          LIMIT = 335872
+          for p in sorted(glob.glob('firmware/**/*.hex', recursive=True)):
+              total = 0
+              for line in open(p):
+                  line = line.strip()
+                  if line.startswith(':') and line[7:9] == '00':
+                      total += int(line[1:3], 16)
+              print(f"{p}: {total} bytes used, {LIMIT - total} bytes free ({100.0 * total / LIMIT:.1f}% of {LIMIT})")
+          EOF
+
       - name: List firmware outputs
         run: |
           echo "Firmware files found:"
