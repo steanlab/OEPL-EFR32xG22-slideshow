@@ -3,10 +3,13 @@
 
   python calibrate_palette.py photo1.jpg [photo2.jpg ...]   -> palette.json
 
-Crop every photo to the OUTER edge of the black frame around the test image first.
+Every photo is normalized by its own white and black patches (this removes the
+differences in exposure and white balance between photos); the median over all
+photos is used. Crop every photo to the OUTER edge of the black frame first.
 Layout: top-left white, top-right black, bottom-left red, bottom-right yellow.
 """
 import json
+import statistics
 import sys
 
 from PIL import Image, ImageOps
@@ -40,47 +43,67 @@ def measure(path):
         cw, ch = w / 2.0, h / 2.0
         box = (int(qx * cw + cw * 0.25), int(qy * ch + ch * 0.25),
                int(qx * cw + cw * 0.75), int(qy * ch + ch * 0.75))
-        px = list(im.crop(box).getdata())
+        raw = im.crop(box).tobytes()
+        n = len(raw) // 3
         s = [0.0, 0.0, 0.0]
-        for p in px:
-            for i in range(3):
-                s[i] += LIN8[p[i]]
-        out[name] = [v / len(px) for v in s]
+        for i in range(0, len(raw), 3):
+            s[0] += LIN8[raw[i]]
+            s[1] += LIN8[raw[i + 1]]
+            s[2] += LIN8[raw[i + 2]]
+        out[name] = [v / n for v in s]
     return out
 
 
+def fmt(v):
+    return "[" + " ".join(f"{x:5.2f}" for x in v) + "]"
+
+
 def main():
-    if len(sys.argv) < 2:
+    paths = sys.argv[1:]
+    if not paths:
         sys.exit(__doc__)
-    shots = [measure(p) for p in sys.argv[1:]]
-    avg = {n: [sum(s[n][i] for s in shots) / len(shots) for i in range(3)] for n, _, _ in NAMES}
+    shots = [measure(p) for p in paths]
 
-    if len(shots) > 1:
-        for n, _, _ in NAMES:
-            dev = max(abs(_srgb(s[n][i]) - _srgb(avg[n][i])) for s in shots for i in range(3))
-            if dev > 12:
-                print(f"WARNING: photos differ by up to {dev} levels on the {n} patch "
-                      f"(uneven light, glare or different exposure)")
+    rels = []
+    print("photo                          white-lum   red (rel R G B)         yellow (rel R G B)")
+    for p, s in zip(paths, shots):
+        w, k = s["white"], s["black"]
+        if lum(w) - lum(k) < 0.03:
+            print(f"{p[:30]:30s}  SKIPPED: too little contrast between white and black")
+            continue
+        rel = {n: [(s[n][i] - k[i]) / max(1e-6, w[i] - k[i]) for i in range(3)]
+               for n in ("red", "yellow")}
+        rels.append(rel)
+        print(f"{p[:30]:30s}  {lum(w):7.3f}    {fmt(rel['red'])}    {fmt(rel['yellow'])}")
+    if len(rels) < 2:
+        sys.exit("ERROR: need at least 2 usable photos")
 
-    w, k, r, y = avg["white"], avg["black"], avg["red"], avg["yellow"]
-    if not (lum(w) > lum(y) > lum(r) > lum(k)):
-        sys.exit("ERROR: expected brightness order white > yellow > red > black. "
-                 "Check the crop, the orientation and the slide layout.")
-    if max(_srgb(c) for c in w) > 250:
-        print("WARNING: the white patch is overexposed; lock a lower exposure and shoot again")
+    med = {n: [statistics.median(r[n][i] for r in rels) for i in range(3)] for n in ("red", "yellow")}
+    wl = [statistics.median(s["white"][i] for s in shots) for i in range(3)]
+    kl = [statistics.median(s["black"][i] for s in shots) for i in range(3)]
 
-    rel = {n: [(avg[n][i] - k[i]) / max(1e-6, w[i] - k[i]) for i in range(3)]
-           for n in ("red", "yellow")}
-    if rel["red"][0] < 2.0 * max(rel["red"][1], 0.01):
-        print("WARNING: the red patch is not clearly red (check white balance and light)")
-    if rel["yellow"][2] > 0.5 * rel["yellow"][0]:
+    if not (lum(wl) > lum(kl) + 0.03):
+        sys.exit("ERROR: white is not brighter than black. Check the crop and the orientation.")
+    for n in ("red", "yellow"):
+        spread = max(max(r[n][i] for r in rels) - min(r[n][i] for r in rels) for i in range(3))
+        if spread > 0.25:
+            print(f"WARNING: photos disagree on the {n} patch (spread {spread:.2f}); "
+                  f"shoot again with fixed exposure and white balance")
+    if med["red"][0] < 2.0 * max(med["red"][1], 0.01):
+        print("WARNING: the red patch is not clearly red")
+    if med["yellow"][2] > 0.5 * med["yellow"][0]:
         print("WARNING: the yellow patch is not clearly yellow")
 
-    pal = {n: [_srgb(c) for c in avg[n]] for n, _, _ in NAMES}
-    print("color        as seen by the camera (sRGB)     relative to panel white/black (linear)")
-    for n, _, _ in NAMES:
-        rl = rel.get(n, [1, 1, 1] if n == "white" else [0, 0, 0])
-        print(f"{n:8s}     {pal[n]}      [{rl[0]:.2f} {rl[1]:.2f} {rl[2]:.2f}]")
+    pal = {"white": [_srgb(c) for c in wl], "black": [_srgb(c) for c in kl]}
+    for n in ("red", "yellow"):
+        rel = [min(1.0, max(0.0, v)) for v in med[n]]
+        pal[n] = [_srgb(kl[i] + rel[i] * (wl[i] - kl[i])) for i in range(3)]
+
+    print()
+    print("median over", len(rels), "photos (relative to the panel white/black, linear):")
+    for n in ("red", "yellow"):
+        print(f"  {n:7s} {fmt(med[n])}")
+    print("palette:", pal)
     with open("palette.json", "w") as f:
         json.dump(pal, f)
     print("saved palette.json")
