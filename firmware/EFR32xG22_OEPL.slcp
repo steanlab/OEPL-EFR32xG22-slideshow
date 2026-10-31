@@ -265,6 +265,8 @@ define:
     value: "8"
   - name: SLIDESHOW
     value: "1"
+  - name: GLOBAL_DEBUG_ENABLE
+    value: "0"
 ui_hints:
   highlight:
   - {path: readme.md, focus: true}
