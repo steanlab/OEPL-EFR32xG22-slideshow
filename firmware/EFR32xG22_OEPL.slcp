@@ -12,6 +12,7 @@ source:
 - {path: boilerplate/app_process.c}
 - {path: common/md5.c}
 - {path: oepl_slideshow.c}
+- {path: oepl_flashid.c}
 - {path: oepl_display.c}
 - {path: drivers/oepl_display_driver_memlcd.c}
 - {path: drivers/oepl_display_driver_IL91874.c}
