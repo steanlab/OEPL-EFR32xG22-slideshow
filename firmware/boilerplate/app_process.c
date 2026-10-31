@@ -32,10 +32,10 @@
 //                                   Includes
 // -----------------------------------------------------------------------------
 #include "sl_component_catalog.h"
-#include "oepl_app.h"
-
 #ifdef SLIDESHOW
 #include "oepl_slideshow.h"
+#else
+#include "oepl_app.h"
 #endif
 
 #if defined(SL_CATALOG_KERNEL_PRESENT)

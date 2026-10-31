@@ -31,9 +31,10 @@
 // -----------------------------------------------------------------------------
 //                                   Includes
 // -----------------------------------------------------------------------------
-#include "oepl_app.h"
 #ifdef SLIDESHOW
 #include "oepl_slideshow.h"
+#else
+#include "oepl_app.h"
 #endif
 
 void app_init(void)

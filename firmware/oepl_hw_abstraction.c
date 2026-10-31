@@ -3,8 +3,12 @@
 // -----------------------------------------------------------------------------
 #include "oepl_hw_abstraction.h"
 #include "oepl_nvm.h"
+#ifdef SLIDESHOW
+#include "oepl_slideshow.h"
+#else
 #include "oepl_app.h"
 #include "oepl_radio.h"
+#endif
 #include "oepl_display.h"
 #include "oepl_nfc_driver_common.h"
 #ifdef SLIDESHOW
@@ -27,17 +31,25 @@
 
 #include "sl_udelay.h"
 #include "sl_mx25_flash_shutdown.h"
+#ifndef SLIDESHOW
 #include "sl_rail_util_pti_config.h"
+#endif
 #include "oepl_efr32_hwtypes.h"
 #include <sl_iostream_handles.h>
+#ifndef SLIDESHOW
 #include "sl_rail_util_init.h"
 #include "rail.h"
+#endif
 #ifdef SLIDESHOW
 #define BTN_FALLING true
 #else
 #define BTN_FALLING false
 #endif
-
+#ifdef SLIDESHOW
+#define RADIO_IS_IDLE() (true)
+#else
+#define RADIO_IS_IDLE() (RAIL_GetRadioState(sl_rail_util_get_handle(SL_RAIL_UTIL_HANDLE_INST0)) & RAIL_RF_STATE_IDLE)
+#endif
 // Todo: abstract away for boards
 
 // -----------------------------------------------------------------------------
@@ -99,12 +111,12 @@ static sl_sleeptimer_timer_handle_t nfc_poll_timer_handle;
 bool app_is_ok_to_sleep(void)
 {
 #ifdef SLIDESHOW
-  if(slideshow_is_event_pending()) {
-    return false;
-  }
-#endif
   if(oepl_display_is_drawing()) {
-    //DPRINTF("$");
+    return true;
+  }
+  return !slideshow_is_event_pending();
+#else
+  if(oepl_display_is_drawing()) {
     return true;
   } else if(oepl_radio_is_event_pending() || oepl_app_is_event_pending()) {
     DPRINTF("@");
@@ -112,6 +124,7 @@ bool app_is_ok_to_sleep(void)
   } else {
     return true;
   }
+#endif
 }
 
 // Override of a GSDK power manager application hook. Tells the power manager
@@ -120,20 +133,17 @@ bool app_is_ok_to_sleep(void)
 sl_power_manager_on_isr_exit_t app_sleep_on_isr_exit(void)
 {
 #ifdef SLIDESHOW
-  if(slideshow_is_event_pending()) {
+  if(oepl_display_is_drawing() || slideshow_is_event_pending()) {
     return SL_POWER_MANAGER_WAKEUP;
   }
-#endif
-  // The things we might have been awoken for:
-  // - radio event
-  // - button press
-  // - application timer (todo)
-  // - other subtask event, e.g. display SPI (todo)
+  return SL_POWER_MANAGER_SLEEP;
+#else
   if(oepl_radio_is_event_pending() || oepl_app_is_event_pending() || oepl_display_is_drawing()) {
     return SL_POWER_MANAGER_WAKEUP;
   } else {
     return SL_POWER_MANAGER_SLEEP;
   }
+#endif
 }
 
 static void nfc_poll_timer_cb(sl_sleeptimer_timer_handle_t *handle, void *data)
@@ -627,7 +637,7 @@ static void deepsleep_timer_cb(sl_sleeptimer_timer_handle_t *handle, void *data)
 {
   (void) handle;
   (void) data;
-  if(RAIL_GetRadioState(sl_rail_util_get_handle(SL_RAIL_UTIL_HANDLE_INST0)) & RAIL_RF_STATE_IDLE) {
+  if(RADIO_IS_IDLE()) {
     // Waking up from EM4 will take us through reset, so set all interface pins back to idle state here.
     const oepl_efr32xg22_tagconfig_t* tagconfig = oepl_efr32xg22_get_config();
     if(tagconfig->debug && tagconfig->debug->type == DBG_EUART) {

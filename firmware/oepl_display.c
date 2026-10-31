@@ -3,7 +3,13 @@
 // -----------------------------------------------------------------------------
 #include "oepl_display.h"
 #include "oepl_nvm.h"
+#ifdef SLIDESHOW
+// В режиме слайдшоу радио не используется. Заглушки этих функций лежат в oepl_slideshow.c
+void oepl_radio_get_mac(uint8_t* mac);
+bool oepl_radio_get_ap_link(uint8_t* channel, uint8_t* ap_mac, uint8_t* lqi, int8_t* rssi);
+#else
 #include "oepl_radio.h"
+#endif
 #include "oepl-definitions.h"
 #include "oepl_drawing_capi.h"
 #include "oepl_display_driver_memlcd.h"

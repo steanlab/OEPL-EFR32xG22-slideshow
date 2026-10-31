@@ -1,3 +1,4 @@
+#include <string.h>
 #include "oepl_slideshow.h"
 #include "oepl_display.h"
 #include "oepl_hw_abstraction.h"
@@ -364,4 +365,15 @@ void slideshow_process(void)
     uint32_t wait_ms = (is_boot && IMG_COUNT > 1) ? TITLE_HOLD_MS : SLIDE_PERIOD_MS;
     sl_sleeptimer_restart_timer_ms(&timer, wait_ms, on_timer, NULL, 0, 0);
   }
+}
+// Заглушки вместо радио. Слабые (weak): пока oepl_radio.c ещё в сборке, настоящие функции главнее.
+__attribute__((weak)) void oepl_radio_get_mac(uint8_t* mac)
+{
+  memset(mac, 0, 8);
+}
+
+__attribute__((weak)) bool oepl_radio_get_ap_link(uint8_t* channel, uint8_t* ap_mac, uint8_t* lqi, int8_t* rssi)
+{
+  (void)channel; (void)ap_mac; (void)lqi; (void)rssi;
+  return false;
 }
