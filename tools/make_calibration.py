@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Make test archives for the slideshow.
 
-  python tools/make_calibration.py tone                    -> cal_tone.zip
-  python tools/make_calibration.py compare a.png b.png ... -> compare.zip
+  python make_calibration.py tone                    -> cal_tone.zip
+  python make_calibration.py palette                 -> cal_palette.zip
+  python make_calibration.py compare a.png b.png ... -> compare.zip
 """
 import sys
 import zipfile
@@ -19,7 +20,6 @@ W = H = 200
 def tone_slide():
     cw, ch = W // COLS, H // ROWS                       # 40 x 50 px cells
     img = Image.new("L", (W, H), 255)
-    # 17 steps of white fraction + extra white/black references
     levels = [i / 16 for i in range(17)] + [1.0, 0.0, 1.0]
     for idx, g in enumerate(levels):
         r, c = divmod(idx, COLS)
@@ -28,6 +28,18 @@ def tone_slide():
         cell.putdata([255 if v else 0 for row in white for v in row])
         img.paste(cell, (c * cw, r * ch))
     ImageDraw.Draw(img).rectangle([0, 0, W - 1, H - 1], outline=0, width=3)
+    return img
+
+
+def palette_slide():
+    """Four solid quadrants: white / black on top, red / yellow at the bottom."""
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    half = W // 2
+    d.rectangle([half, 0, W - 1, half - 1], fill=(0, 0, 0))
+    d.rectangle([0, half, half - 1, H - 1], fill=(255, 0, 0))
+    d.rectangle([half, half, W - 1, H - 1], fill=(255, 255, 0))
+    d.rectangle([0, 0, W - 1, H - 1], outline=(0, 0, 0), width=3)
     return img
 
 
@@ -58,6 +70,8 @@ def compare(files, out):
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "tone":
         save_zip("cal_tone.zip", [("00_cal_raw.png", tone_slide())])
+    elif len(sys.argv) >= 2 and sys.argv[1] == "palette":
+        save_zip("cal_palette.zip", [("00_cal_palette_color.png", palette_slide())])
     elif len(sys.argv) >= 3 and sys.argv[1] == "compare":
         compare(sys.argv[2:], "compare.zip")
     else:
