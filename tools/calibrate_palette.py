@@ -85,7 +85,7 @@ def main():
     if not (lum(wl) > lum(kl) + 0.03):
         sys.exit("ERROR: white is not brighter than black. Check the crop and the orientation.")
     for n in ("red", "yellow"):
-        spread = max(max(r[n][i] for r in rels) - min(r[n][i] for r in rels) for i in range(3))
+        spread = max(max(min(1.0, r[n][i]) for r in rels) - min(min(1.0, r[n][i]) for r in rels) for i in range(3))
         if spread > 0.25:
             print(f"WARNING: photos disagree on the {n} patch (spread {spread:.2f}); "
                   f"shoot again with fixed exposure and white balance")
