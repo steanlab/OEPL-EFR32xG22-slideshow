@@ -73,6 +73,10 @@ jobs:
 
       - name: Firmware size
         run: |
+          docker run --rm --user 0:0 -v "${{ github.workspace }}:/build" -w /build silabs-builder sh -c 'S=$(find /opt -name arm-none-eabi-size | head -1); O=$(find firmware/out -name "*.out" | head -1); echo "$S $O"; $S -A "$O"' || true
+
+      - name: Firmware size
+        run: |
           python3 - <<'EOF'
           import glob
           LIMIT = 335872
