@@ -9,6 +9,7 @@
 #include "images.h"
 
 extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
+extern void flashid_report(void);
 
 // ---------------- Настройки ----------------
 #define SLIDE_PERIOD_MS      (60UL * 60UL * 1000UL)   // период автосмены
@@ -262,6 +263,7 @@ void slideshow_init(void)
 {
   oepl_hw_init();
   oepl_hw_init_gpio(on_gpio);
+  flashid_report();
 #if BATT_READOUT_AT_BOOT
   battery_readout();
 #endif
