@@ -115,9 +115,6 @@ def colorcmp2(files, out):
     print("Labels: <image number>-<variant>: A = old method, B = new method,")
     print("  D = new method + tone correction for colors, E = D with less grain")
     
-elif len(sys.argv) >= 3 and sys.argv[1] == "colorcmp2":
-        colorcmp2(sys.argv[2:], "colorcmp2.zip")
-
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "tone":
         save_zip("cal_tone.zip", [("00_cal_raw.png", tone_slide())])
@@ -127,5 +124,7 @@ if __name__ == "__main__":
         compare(sys.argv[2:], "compare.zip")
     elif len(sys.argv) >= 3 and sys.argv[1] == "colorcmp":
         colorcmp(sys.argv[2:], "colorcmp.zip")
+    elif len(sys.argv) >= 3 and sys.argv[1] == "colorcmp2":
+        colorcmp2(sys.argv[2:], "colorcmp2.zip")
     else:
         sys.exit(__doc__)
