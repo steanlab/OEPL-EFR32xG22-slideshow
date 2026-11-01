@@ -41,6 +41,8 @@ MIN_GAIN = 0.10             # store compressed only if it is at least 10% smalle
 CH_LO = 0.06                # (v2) linear chroma where a pixel starts to count as colored
 CH_HI = 0.25                # (v2) linear chroma where a pixel counts as fully colored
 GATE_W = 0.35               # (v2) colored weight above which red/yellow inks may be used
+V2_TONE_MIX = 0.0           # (v2) how much of the tone-curve correction colored pixels get (0..1)
+V2_ERR_GAIN = 1.0           # (v2) share of the quantization error that is passed on (lower = less grain)
 
 KERNEL_FS = [(1, 0, 7 / 16), (-1, 1, 3 / 16), (0, 1, 5 / 16), (1, 1, 1 / 16)]
 KERNEL_ATK = [(1, 0, 1 / 8), (2, 0, 1 / 8), (-1, 1, 1 / 8),
@@ -218,9 +220,10 @@ def dither_color_v2(img, W, H, tone, pal):
             r, g, b = (LIN[v] for v in px[x, y])
             w = smoothstep(CH_LO, CH_HI, max(r, g, b) - min(r, g, b))
             colored[y][x] = w >= GATE_W
-            R[y][x] = (1 - w) * coverage_for(r, tone) + w * r
-            G[y][x] = (1 - w) * coverage_for(g, tone) + w * g
-            B[y][x] = (1 - w) * coverage_for(b, tone) + w * b
+            t = 1 - w * (1 - V2_TONE_MIX)          # weight of the tone-curve correction
+            R[y][x] = t * coverage_for(r, tone) + (1 - t) * r
+            G[y][x] = t * coverage_for(g, tone) + (1 - t) * g
+            B[y][x] = t * coverage_for(b, tone) + (1 - t) * b
     out = [[0] * W for _ in range(H)]
     for y in range(H):
         rev = y & 1
@@ -237,7 +240,9 @@ def dither_color_v2(img, W, H, tone, pal):
                 if d < bd:
                     bd, best = d, i
             out[y][x] = best
-            er, eg, eb = r - pal[best][0], g - pal[best][1], b - pal[best][2]
+            er = (r - pal[best][0]) * V2_ERR_GAIN
+            eg = (g - pal[best][1]) * V2_ERR_GAIN
+            eb = (b - pal[best][2]) * V2_ERR_GAIN
             for dx, dy, wt in KERNEL_FS:
                 xx = x + (-dx if rev else dx)
                 if 0 <= xx < W:
@@ -313,7 +318,12 @@ def color_stats(im, W, H):
 
 def process(path, W, H, tone, pal_rel, mode=None, force_color=False):
     """Returns (kind, matrix, label, mid-tone share, (c30, c60, hue)). kind 1 = bw, 2 = color."""
-    mode = mode or "old"
+    mode = mode or "old
+        stem_tokens = set(os.path.splitext(os.path.basename(path))[0].lower().split("_"))
+    if "v2" in stem_tokens:
+        mode = "v2"
+    elif "v1" in stem_tokens:
+        mode = "old"
     algo, inv, raw, raw4, fmt = parse_flags(path)
     if raw4:
         px = load_rgb(path, W, H).load()
@@ -456,12 +466,16 @@ def main():
     ap.add_argument("--tone", default=None)
     ap.add_argument("--palette", default=None)
     ap.add_argument("--color-mode", choices=("old", "v2"), default="old")
+    ap.add_argument("--v2-tone-mix", type=float, default=V2_TONE_MIX)
+    ap.add_argument("--v2-err-gain", type=float, default=V2_ERR_GAIN)
     ap.add_argument("--preview", default=None)
     ap.add_argument("--no-compress", action="store_true")
     ap.add_argument("--budget", type=int, default=240000,
                     help="warn if all images together take more flash than this (bytes)")
     a = ap.parse_args()
     W, H = a.width, a.height
+    globals()["V2_TONE_MIX"] = a.v2_tone_mix
+    globals()["V2_ERR_GAIN"] = a.v2_err_gain
 
     files = sorted(
         (p for p in glob.glob(os.path.join(a.src, "*"))
