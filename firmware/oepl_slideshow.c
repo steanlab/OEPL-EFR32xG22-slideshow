@@ -7,6 +7,7 @@
 #include "sl_sleeptimer.h"
 #include "sl_udelay.h"
 #include "images.h"
+#include "em_wdog.h"
 
 extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
 extern void flashid_report(void);
@@ -30,6 +31,9 @@ extern void flashid_report(void);
 #define LED_BLUE   0x1C   // смена по таймеру
 #define LED_GREEN  0xE0   // долгое нажатие, вывод напряжения
 
+#define WATCHDOG_ENABLE   1
+#define PROCESS_LIMIT_MS  (150UL * 1000UL)   // дольше этого одна обработка считается зависанием
+
 typedef enum { REQ_NONE, REQ_NEXT, REQ_PREV, REQ_TITLE } request_t;
 
 static sl_sleeptimer_timer_handle_t timer;
@@ -49,6 +53,9 @@ static bool boot_done = false;
 static uint32_t last_tap_tick = 0;
 static size_t cur_shown = 0;
 static size_t prev_shown = 0;
+static sl_sleeptimer_timer_handle_t wd_timer;
+static volatile bool in_proc = false;
+static uint32_t proc_since_tick = 0;
 
 // ---------------- Порядок показа: заглавный слайд, затем случайно -----------
 static bool first_slide = true;
@@ -258,6 +265,14 @@ static void battery_readout(void)
 }
 #endif
 
+static void on_wd_timer(sl_sleeptimer_timer_handle_t *h, void *d)
+{
+  (void)h; (void)d;
+  // Кормим сторожа, пока тег спит или обработка идёт не слишком долго
+  if (!in_proc || sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count() - proc_since_tick) < PROCESS_LIMIT_MS) {
+    WDOGn_Feed(WDOG0);
+  }
+}
 // ---------------- Основной цикл ---------------------------------------------
 void slideshow_init(void)
 {
@@ -271,12 +286,21 @@ void slideshow_init(void)
   sl_sleeptimer_start_periodic_timer_ms(&batt_timer, BATT_CHECK_PERIOD_MS, on_batt_timer, NULL, 0, 0);
 }
 
+#if WATCHDOG_ENABLE
+  WDOG_Init_TypeDef wd = WDOG_INIT_DEFAULT;
+  wd.perSel = wdogPeriod_256k;      // около 4 минут при тактировании ULFRCO (1 кГц)
+  wd.em2Run = true;
+  wd.em3Run = true;
+  WDOGn_Init(WDOG0, &wd);
+  sl_sleeptimer_start_periodic_timer_ms(&wd_timer, 10000, on_wd_timer, NULL, 0, 0);
+#endif
+
 bool slideshow_is_event_pending(void)
 {
   return due || tap || btn_short || btn_long || batt_check;
 }
 
-void slideshow_process(void)
+static void process_inner(void)
 {
   if (batt_check) {
     batt_check = false;
@@ -378,4 +402,11 @@ __attribute__((weak)) bool oepl_radio_get_ap_link(uint8_t* channel, uint8_t* ap_
 {
   (void)channel; (void)ap_mac; (void)lqi; (void)rssi;
   return false;
+}
+void slideshow_process(void)
+{
+  proc_since_tick = sl_sleeptimer_get_tick_count();
+  in_proc = true;
+  process_inner();
+  in_proc = false;
 }
