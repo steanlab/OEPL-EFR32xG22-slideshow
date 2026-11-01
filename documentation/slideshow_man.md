@@ -7,8 +7,9 @@ or cables are needed.
 ## What it does
 
 - **Power-up.** When a battery is inserted, the LED flashes **blue** and the
-  screen redraws the **title picture**. About 30 seconds later the slideshow starts.
-- **Automatic change.** Every 60 minutes the LED flashes **blue** and the screen
+  screen redraws the **title picture**. About 15 seconds after the title picture
+  appears, the slideshow starts.
+- **Automatic change.** Every 2 hours the LED flashes **blue** and the screen
   shows the next picture. Pictures come in random order, and every picture is
   shown once before any repeats. The title picture appears only after power-up.
 - **Manual change.** Hold the back of your phone against the tag for one or two
@@ -28,9 +29,18 @@ not erase it.
 | LED | Meaning |
 |---|---|
 | One short **blue** flash | Timed change. A new picture is about to be drawn. |
-| One short **red** flash | Your touch was recognized. A new picture is about to be drawn. |
+| One short **red** flash | Your touch (or button press) was recognized. A new picture is about to be drawn. |
 | **Five red** flashes in a row, repeating every 10 minutes (also after a touch) | The battery is critically low. The tag stops refreshing the screen and the last picture stays on display. Replace the battery. |
 | **Two long red** flashes | The picture could not be shown. The previous picture stays on the screen. This should not happen in normal use. |
+
+## Tags with a button
+
+If your tag has a button, it works like the NFC touch:
+- **Short press:** next picture (red flash).
+- **Long press** (hold for about 1.5 seconds): the LED flashes **green**.
+  By default this pauses the automatic change (3 green flashes) or resumes it
+  (1 green flash). While paused, the picture stays until you touch the tag or
+  press the button again.
 
 ## Replacing the battery
 
@@ -46,4 +56,6 @@ with the title picture.
   the next refresh.
 - In the cold the screen may refresh more slowly and look paler. Room
   temperature works best.
+- If the tag ever freezes, it restarts by itself after a few minutes and shows
+  the title picture again.
 - Do not press on the screen or bend the tag.
