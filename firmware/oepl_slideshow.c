@@ -12,7 +12,7 @@
 extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
 
 // ---------------- Настройки ----------------
-#define SLIDE_PERIOD_MS      (120UL * 60UL * 1000UL)   // период автосмены
+#define SLIDE_PERIOD_MS      (1UL * 60UL * 1000UL)   // период автосмены
 #define TITLE_HOLD_MS        (15UL * 1000UL)          // заглавный слайд после включения
 #define TAP_IGNORE_MS        5000UL                   // защита от повторных срабатываний NFC
 #define LONG_PRESS_MS        1500UL                   // порог долгого нажатия
