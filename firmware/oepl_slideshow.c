@@ -278,22 +278,21 @@ void slideshow_init(void)
 {
   oepl_hw_init();
   oepl_hw_init_gpio(on_gpio);
-  flashid_report();
 #if BATT_READOUT_AT_BOOT
   battery_readout();
 #endif
   sl_sleeptimer_start_timer_ms(&timer, SLIDE_PERIOD_MS, on_timer, NULL, 0, 0);
   sl_sleeptimer_start_periodic_timer_ms(&batt_timer, BATT_CHECK_PERIOD_MS, on_batt_timer, NULL, 0, 0);
-}
 
 #if WATCHDOG_ENABLE
   WDOG_Init_TypeDef wd = WDOG_INIT_DEFAULT;
-  wd.perSel = wdogPeriod_256k;      // около 4 минут при тактировании ULFRCO (1 кГц)
+  wd.perSel = wdogPeriod_256k;       // около 4 минут при тактировании ULFRCO (1 кГц)
   wd.em2Run = true;
   wd.em3Run = true;
   WDOGn_Init(WDOG0, &wd);
   sl_sleeptimer_start_periodic_timer_ms(&wd_timer, 10000, on_wd_timer, NULL, 0, 0);
 #endif
+}
 
 bool slideshow_is_event_pending(void)
 {
