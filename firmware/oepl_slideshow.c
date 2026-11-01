@@ -12,7 +12,8 @@
 extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
 
 // ---------------- Настройки ----------------
-#define SLIDE_PERIOD_MS      (1UL * 60UL * 1000UL)   // период автосмены
+#define SLIDE_PERIOD_MS      (35UL * 1000UL)   // ВРЕМЕННО для теста; рабочее значение: (120UL * 60UL * 1000UL)
+#define TEST_SEQUENTIAL      1                 // ВРЕМЕННО: 1 = слайды по порядку 0,1,2,... по кругу; рабочее значение: 0
 #define TITLE_HOLD_MS        (15UL * 1000UL)          // заглавный слайд после включения
 #define TAP_IGNORE_MS        5000UL                   // защита от повторных срабатываний NFC
 #define LONG_PRESS_MS        1500UL                   // порог долгого нажатия
@@ -100,6 +101,12 @@ static void reshuffle(void)
 
 static size_t next_index(void)
 {
+#if TEST_SEQUENTIAL
+  static size_t seq = 0;
+  size_t i = seq;
+  seq = (seq + 1) % IMG_COUNT;
+  return i;                         // 0, 1, 2, ... по алфавиту, потом снова 0
+#else
   if (first_slide) {
     first_slide = false;
     return 0;                       // заглавный слайд
@@ -111,6 +118,7 @@ static size_t next_index(void)
     reshuffle();
   }
   return order[order_pos++];
+#endif
 }
 
 // ---------------- Таймеры, NFC, кнопка, светодиод ---------------------------
