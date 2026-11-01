@@ -63,6 +63,10 @@ You need:
 - The Silicon Labs EFR32BG22 device family pack (`.pack` file), placed in the
   repository folder. The commands below use
   `SiliconLabs.GeckoPlatform_EFR32BG22_DFP.2025.12.1.pack`.
+[CMSIS Packs](https://www.keil.arm.com/packs/):
+[SiliconLabs.GeckoPlatform_EFR32BG22_DFP.2025.12.1.pack](https://www.silabs.com/documents/public/cmsis-packs/SiliconLabs.GeckoPlatform_EFR32BG22_DFP.2025.12.1.pack)
+[SiliconLabs.GeckoPlatform_EFR32FG22_DFP.2025.12.1.pack](https://www.silabs.com/documents/public/cmsis-packs/SiliconLabs.GeckoPlatform_EFR32FG22_DFP.2025.12.1.pack)
+ 
 - Wires to the tag's SWD pads: SWDIO, SWCLK, GND, and 3V3 (the tag can also run
   from its own battery). The RESET wire is optional.
 
