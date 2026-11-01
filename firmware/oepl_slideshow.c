@@ -10,7 +10,6 @@
 #include "em_wdog.h"
 
 extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
-extern void flashid_report(void);
 
 // ---------------- Настройки ----------------
 #define SLIDE_PERIOD_MS      (120UL * 60UL * 1000UL)   // период автосмены
