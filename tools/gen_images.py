@@ -41,7 +41,7 @@ MIN_GAIN = 0.10             # store compressed only if it is at least 10% smalle
 CH_LO = 0.06                # (v2) linear chroma where a pixel starts to count as colored
 CH_HI = 0.25                # (v2) linear chroma where a pixel counts as fully colored
 GATE_W = 0.35               # (v2) colored weight above which red/yellow inks may be used
-V2_TONE_MIX = 0.0           # (v2) how much of the tone-curve correction colored pixels get (0..1)
+V2_TONE_MIX = 0.6           # (v2) how much of the tone-curve correction colored pixels get (0..1)
 V2_ERR_GAIN = 1.0           # (v2) share of the quantization error that is passed on (lower = less grain)
 
 KERNEL_FS = [(1, 0, 7 / 16), (-1, 1, 3 / 16), (0, 1, 5 / 16), (1, 1, 1 / 16)]
