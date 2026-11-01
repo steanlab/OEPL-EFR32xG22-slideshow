@@ -319,7 +319,7 @@ def color_stats(im, W, H):
 def process(path, W, H, tone, pal_rel, mode=None, force_color=False):
     """Returns (kind, matrix, label, mid-tone share, (c30, c60, hue)). kind 1 = bw, 2 = color."""
     mode = mode or "old"
-        stem_tokens = set(os.path.splitext(os.path.basename(path))[0].lower().split("_"))
+    stem_tokens = set(os.path.splitext(os.path.basename(path))[0].lower().split("_"))
     if "v2" in stem_tokens:
         mode = "v2"
     elif "v1" in stem_tokens:
