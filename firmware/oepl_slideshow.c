@@ -12,8 +12,8 @@ extern bool oepl_display_slideshow_draw(const uint8_t* bitmap);
 extern void flashid_report(void);
 
 // ---------------- Настройки ----------------
-#define SLIDE_PERIOD_MS      (60UL * 60UL * 1000UL)   // период автосмены
-#define TITLE_HOLD_MS        (30UL * 1000UL)          // заглавный слайд после включения
+#define SLIDE_PERIOD_MS      (120UL * 60UL * 1000UL)   // период автосмены
+#define TITLE_HOLD_MS        (15UL * 1000UL)          // заглавный слайд после включения
 #define TAP_IGNORE_MS        5000UL                   // защита от повторных срабатываний NFC
 #define LONG_PRESS_MS        1500UL                   // порог долгого нажатия
 #define BTN_PRESSED_LEVEL    0                        // уровень на пине при нажатой кнопке
