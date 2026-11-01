@@ -5,13 +5,15 @@ deflate-compressed, and write them as a C header.
 Usage:
   gen_images.py <src_dir> <out_header> [width] [height] [xshift]
                 [--tone tone_curve.json] [--palette palette.json]
-                [--preview preview.png] [--no-compress] [--budget BYTES]
+                [--color-mode old|v2] [--preview preview.png]
+                [--no-compress] [--budget BYTES]
 
 Per-image options are file name suffixes (see slideshow_src/README.md):
   _bw _color          force the 1-bit or the 4-color format (default: automatic)
   _thr _atk _fs _ord  dithering algorithm for 1-bit images (default: automatic)
   _inv                invert
   _raw                image is already 1-bit at panel size, use as-is
+  _raw4               image is already dithered with the 4 preview colors, use as-is
 
 Image format (little endian):
   byte 0     format: 1 = 1 bit/pixel, 2 = 2 bits/pixel; +0x80 = compressed
@@ -36,6 +38,9 @@ EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 ALGOS = ("thr", "atk", "fs", "ord")
 COLOR_C60_MIN = 0.05        # share of clearly colored pixels above which an image is stored as color
 MIN_GAIN = 0.10             # store compressed only if it is at least 10% smaller
+CH_LO = 0.06                # (v2) linear chroma where a pixel starts to count as colored
+CH_HI = 0.25                # (v2) linear chroma where a pixel counts as fully colored
+GATE_W = 0.35               # (v2) colored weight above which red/yellow inks may be used
 
 KERNEL_FS = [(1, 0, 7 / 16), (-1, 1, 3 / 16), (0, 1, 5 / 16), (1, 1, 1 / 16)]
 KERNEL_ATK = [(1, 0, 1 / 8), (2, 0, 1 / 8), (-1, 1, 1 / 8),
@@ -123,6 +128,15 @@ def coverage_for(L, tone):
     return g[-1]
 
 
+def smoothstep(a, b, x):
+    if x <= a:
+        return 0.0
+    if x >= b:
+        return 1.0
+    t = (x - a) / (b - a)
+    return t * t * (3 - 2 * t)
+
+
 def diffuse(cov, W, H, kernel, serpentine):
     """Error diffusion on a field of white fractions. Returns rows of bool (True = white)."""
     buf = [list(row) + [0.0, 0.0] for row in cov] + [[0.0] * (W + 2) for _ in range(2)]
@@ -154,7 +168,7 @@ def dither(cov, W, H, algo):
 
 
 def dither_color(img, W, H, lut, pal):
-    """Serpentine Floyd-Steinberg towards the 4 panel colors. Returns rows of codes 0..3."""
+    """(old) Serpentine Floyd-Steinberg towards the 4 panel colors in tone-curve space."""
     px = img.load()
     R = [[0.0] * (W + 2) for _ in range(H + 1)]
     G = [[0.0] * (W + 2) for _ in range(H + 1)]
@@ -187,12 +201,58 @@ def dither_color(img, W, H, lut, pal):
     return out
 
 
+def dither_color_v2(img, W, H, tone, pal):
+    """(v2) Color dithering in physical (linear) light.
+
+    pal = the 4 inks as linear RGB relative to the panel (white = 1, black = 0), NOT warped
+    by the tone curve. Neutral pixels get the tone-curve (dot gain) correction and may use
+    only white and black, so gray areas never turn red; colored pixels may use all 4 inks.
+    """
+    px = img.load()
+    R = [[0.0] * (W + 2) for _ in range(H + 1)]
+    G = [[0.0] * (W + 2) for _ in range(H + 1)]
+    B = [[0.0] * (W + 2) for _ in range(H + 1)]
+    colored = [[False] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            r, g, b = (LIN[v] for v in px[x, y])
+            w = smoothstep(CH_LO, CH_HI, max(r, g, b) - min(r, g, b))
+            colored[y][x] = w >= GATE_W
+            R[y][x] = (1 - w) * coverage_for(r, tone) + w * r
+            G[y][x] = (1 - w) * coverage_for(g, tone) + w * g
+            B[y][x] = (1 - w) * coverage_for(b, tone) + w * b
+    out = [[0] * W for _ in range(H)]
+    for y in range(H):
+        rev = y & 1
+        xs = range(W - 1, -1, -1) if rev else range(W)
+        for x in xs:
+            r = min(1.0, max(0.0, R[y][x]))
+            g = min(1.0, max(0.0, G[y][x]))
+            b = min(1.0, max(0.0, B[y][x]))
+            cand = (0, 1, 2, 3) if colored[y][x] else (0, 1)
+            best, bd = cand[0], 1e9
+            for i in cand:
+                pr, pg, pb = pal[i]
+                d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
+                if d < bd:
+                    bd, best = d, i
+            out[y][x] = best
+            er, eg, eb = r - pal[best][0], g - pal[best][1], b - pal[best][2]
+            for dx, dy, wt in KERNEL_FS:
+                xx = x + (-dx if rev else dx)
+                if 0 <= xx < W:
+                    R[y + dy][xx] += er * wt
+                    G[y + dy][xx] += eg * wt
+                    B[y + dy][xx] += eb * wt
+    return out
+
+
 def parse_flags(path):
     stem = os.path.splitext(os.path.basename(path))[0].lower()
     toks = set(stem.split("_"))
     algo = next((a for a in ALGOS if a in toks), None)
     fmt = "bw" if "bw" in toks else ("color" if "color" in toks else None)
-    return algo, ("inv" in toks), ("raw" in toks), fmt
+    return algo, ("inv" in toks), ("raw" in toks), ("raw4" in toks), fmt
 
 
 def load_rgb(path, W, H):
@@ -251,9 +311,21 @@ def color_stats(im, W, H):
     return n30 / float(W * H), n60 / float(W * H), 1.0 - best / float(n30)
 
 
-def process(path, W, H, tone, pal_rel):
+def process(path, W, H, tone, pal_rel, mode=None, force_color=False):
     """Returns (kind, matrix, label, mid-tone share, (c30, c60, hue)). kind 1 = bw, 2 = color."""
-    algo, inv, raw, fmt = parse_flags(path)
+    mode = mode or "old"
+    algo, inv, raw, raw4, fmt = parse_flags(path)
+    if raw4:
+        px = load_rgb(path, W, H).load()
+        codes = []
+        for y in range(H):
+            row = []
+            for x in range(W):
+                p = px[x, y]
+                row.append(min(range(4), key=lambda i: sum((p[c] - PREVIEW_COLORS[i][c]) ** 2
+                                                           for c in range(3))))
+            codes.append(row)
+        return 2, codes, "raw4", 0.0, (0.0, 0.0, 0.0)
     if raw:
         px = load_gray(path, W, H).load()
         white = [[(px[x, y] >= 128) != inv for x in range(W)] for y in range(H)]
@@ -261,16 +333,20 @@ def process(path, W, H, tone, pal_rel):
 
     rgb = load_rgb(path, W, H)
     stats = color_stats(rgb, W, H)
-    use_color = (fmt == "color") or (fmt is None and stats[1] >= COLOR_C60_MIN)
+    use_color = force_color or (fmt == "color") or (fmt is None and stats[1] >= COLOR_C60_MIN)
     if inv:
         rgb = ImageOps.invert(rgb)
 
     lut = [coverage_for(LIN[v], tone) for v in range(256)]
     if use_color:
         rgb = stretch_rgb(rgb)
-        pal_t = [[coverage_for(c, tone) for c in col] for col in pal_rel]
-        label = "color" if fmt else "color (auto)"
-        return 2, dither_color(rgb, W, H, lut, pal_t), label, 0.0, stats
+        if mode == "v2":
+            mat = dither_color_v2(rgb, W, H, tone, pal_rel)
+        else:
+            pal_t = [[coverage_for(c, tone) for c in col] for col in pal_rel]
+            mat = dither_color(rgb, W, H, lut, pal_t)
+        label = f"color/{mode}" + ("" if (fmt or force_color) else " (auto)")
+        return 2, mat, label, 0.0, stats
 
     gray = ImageOps.autocontrast(rgb.convert("L"), cutoff=1)
     hist = gray.histogram()
@@ -379,9 +455,10 @@ def main():
     ap.add_argument("xshift", nargs="?", type=int, default=0)
     ap.add_argument("--tone", default=None)
     ap.add_argument("--palette", default=None)
+    ap.add_argument("--color-mode", choices=("old", "v2"), default="old")
     ap.add_argument("--preview", default=None)
     ap.add_argument("--no-compress", action="store_true")
-    ap.add_argument("--budget", type=int, default=220000,
+    ap.add_argument("--budget", type=int, default=240000,
                     help="warn if all images together take more flash than this (bytes)")
     a = ap.parse_args()
     W, H = a.width, a.height
@@ -398,6 +475,7 @@ def main():
     tone = load_tone(a.tone)
     print("tone curve:", ("loaded from " + a.tone) if tone else "none (identity)")
     pal_rel = palette_rel(load_palette(a.palette))
+    print("color mode:", a.color_mode)
 
     preview = []
     total = n_bw = n_color = n_z = 0
@@ -405,7 +483,7 @@ def main():
         f.write("#pragma once\n#include <stdint.h>\n")
         f.write(f"#define IMG_COUNT {len(files)}\n")
         for i, path in enumerate(files):
-            kind, mat, label, mid, stats = process(path, W, H, tone, pal_rel)
+            kind, mat, label, mid, stats = process(path, W, H, tone, pal_rel, mode=a.color_mode)
             rolled = roll(mat, W, a.xshift)
             raw = pack1(rolled, W, H) if kind == 1 else pack2(rolled, W, H)
             data, packed = try_compress(raw, not a.no_compress)
