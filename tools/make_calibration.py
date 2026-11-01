@@ -96,9 +96,9 @@ def colorcmp2(files, out):
     tone = g.load_tone("tone_curve.json")
     nominal = g.palette_rel(g.load_palette(None))
     variants = [("A", "old", 0.0, 1.0),     # old method (the reference)
-                ("B", "v2", 0.0, 1.0),      # new method as tested before
-                ("D", "v2", 0.6, 1.0),      # new method, colored pixels also get tone correction
-                ("E", "v2", 0.6, 0.8)]      # same, with less error diffusion (less grain)
+                ("D", "v2", 0.6, 1.0),      # current favorite
+                ("F", "v2", 0.6, 0.9),      # D with a little less grain
+                ("G", "v2", 0.8, 1.0)]      # D with more tone correction (lighter)
     font = ImageFont.load_default()
     entries = []
     for k, path in enumerate(files, 1):
@@ -112,8 +112,9 @@ def colorcmp2(files, out):
             d.text((2, 1), f"{k}-{tag}", fill=(0, 0, 0), font=font)
             entries.append((f"{len(entries):02d}_c{k}_{tag}_raw4.png", im))
     save_zip(out, entries)
-    print("Labels: <image number>-<variant>: A = old method, B = new method,")
-    print("  D = new method + tone correction for colors, E = D with less grain")
+    print("Labels: <image number>-<variant>:")
+    print("  A = old method, D = new method (current favorite),")
+    print("  F = D with less grain, G = D with more tone correction (lighter)")
     
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "tone":
